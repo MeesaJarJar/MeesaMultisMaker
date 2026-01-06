@@ -5,13 +5,13 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="https://discord.gg/MpBe7cJDqV">Discord</a>  •
-  <a href="#installation">Installation</a> •
-  <a href="#getting-started">Getting Started</a> •
-  <a href="#main-editors">Editors</a> •
-  <a href="#comfyui-integration">ComfyUI Integration</a> •
-  <a href="#keyboard-shortcuts">Shortcuts</a> •
+  <a href="#features">Features</a> �
+  <a href="https://discord.gg/MpBe7cJDqV">Discord</a>  �
+  <a href="#installation">Installation</a> �
+  <a href="#getting-started">Getting Started</a> �
+  <a href="#main-editors">Editors</a> �
+  <a href="#comfyui-integration">ComfyUI Integration</a> �
+  <a href="#keyboard-shortcuts">Shortcuts</a> �
   <a href="#license">License</a>
 </p>
 
@@ -32,30 +32,30 @@
 
 ## Features
 
-### ?? Isometric Canvas Editor (Main Form)
-- **Diamond grid system** - Standard 44×44 pixel Ultima Online tile format
+### Isometric Canvas Editor (Main Form)
+- **Diamond grid system** - Standard 44x44 pixel Ultima Online tile format
 - **Multi-object selection** - Ctrl+Click for multi-select, marquee selection with Ctrl+Drag
 - **Z-ordering and layering** - Full control over object depth and draw order
 - **Pan & Zoom** - Middle-click pan, Ctrl+Scroll to zoom (0.2x to 4x)
 - **Snap-to-grid** - Objects automatically align to isometric grid positions
 - **Z-level filtering** - Filter visible objects by Z height range
 
-### ?? Transform Tools
+### Transform Tools
 - **Scale** - Resize objects (0.1x to 10x) with +/- keys
-- **Rotate** - Free rotation with R key, 15° or 90° snap with Shift/Ctrl
+- **Rotate** - Free rotation with R key, 15 degree or 90 degree snap with Shift/Ctrl
 - **Flip** - Horizontal (F) and Vertical (Shift+F) flipping
 - **Skew/Distort** - Corner-based perspective transform (K key)
 - **Pixel Offset** - Fine-tune positioning with Alt+Arrow keys
 
-### ?? Slice Tool
+### Slice Tool
 Create vertical slices of placed images based on selected diamond tiles - perfect for creating building pieces that align perfectly with the isometric grid.
 
-### ?? Lock System
+### Lock System
 - Lock objects to prevent accidental editing
 - Separate locked/unlocked object lists
 - Multi-select lock/unlock operations
 
-### ?? AI Integration (ComfyUI)
+### AI Integration (ComfyUI)
 - **Image-to-Image** - Transform existing sprites with AI
 - **Inpainting** - Selective region regeneration with masks
 - **Text-to-Image** - Generate new assets from text prompts
@@ -63,7 +63,7 @@ Create vertical slices of placed images based on selected diamond tiles - perfec
 - **Old/New Toggle** - Compare AI-generated results with originals
 - **Drop Black Pixels** - Automatic background removal for generated images
 
-### ?? Import/Export
+### Import/Export
 - **Canvas Export** - Save entire canvas as PNG
 - **Multi Text Import/Export** - Load/save Ultima Online multi format files
 - **Parts Export** - Export individual components for AI processing
@@ -73,11 +73,11 @@ Create vertical slices of placed images based on selected diamond tiles - perfec
 
 ## Main Editors
 
-### ??? Painter Form
+### Painter Form
 A full-featured layer-based pixel art editor for creating custom sprites.
 
 **Features:**
-- **Multiple canvas sizes** - 512×512, 768×768, 1024×1024, 1536×1536
+- **Multiple canvas sizes** - 512x512, 768x768, 1024x1024, 1536x1536
 - **Layer system** - Add, delete, reorder, rename, lock, and adjust opacity
 - **Drawing tools:**
   - Brush (soft round with anti-aliasing)
@@ -96,7 +96,7 @@ A full-featured layer-based pixel art editor for creating custom sprites.
 - **Send to Canvas** - Export merged image to main form
 - **Send to GUMP Editor** - Export to GUMP Editor
 
-### ?? GUMP Editor
+### GUMP Editor
 Specialized editor for Ultima Online UI graphics (GUMPs).
 
 **Features:**
@@ -115,7 +115,7 @@ Specialized editor for Ultima Online UI graphics (GUMPs).
 - **Custom image import** - Add PNG images as GUMPs
 - **Canvas export** - Save compositions as PNG
 
-### ?? MUL Viewer
+### MUL Viewer
 Browser for viewing and generating multi structures from MUL files.
 
 **Features:**
@@ -130,7 +130,7 @@ Browser for viewing and generating multi structures from MUL files.
 
 **Structure Generation (AI-like):**
 - Select one or more multis as training data
-- Configure output dimensions (width × height)
+- Configure output dimensions (width x height)
 - Adjust generation parameters:
   - Kernel size
   - Epochs
@@ -141,7 +141,7 @@ Browser for viewing and generating multi structures from MUL files.
   - Wave Function Collapse (WFC)
 - Generate new structures based on learned patterns
 
-### ??? Map Viewer
+### Map Viewer
 World map browser with tile/static editing and AI replacement.
 
 **Features:**
@@ -200,7 +200,7 @@ World map browser with tile/static editing and AI replacement.
 
 ### Creating a Multi Structure
 
-1. Set grid size using Width/Height controls (e.g., 10×10)
+1. Set grid size using Width/Height controls (e.g., 10x10)
 2. Click "Create Grid" to initialize the canvas
 3. Drag foundation pieces from the palette
 4. Add walls, set appropriate Z levels with Z+/Z- buttons
@@ -213,12 +213,68 @@ World map browser with tile/static editing and AI replacement.
 
 Meesa Multis Maker integrates with [ComfyUI](https://github.com/comfyanonymous/ComfyUI) for AI-powered image generation and transformation.
 
+### What is ComfyUI?
+
+ComfyUI is a free open source framework that serves as a bridge that allows users to use the latest technology that exists in the art generation field. It runs on Windows well and uses your local GPU to allow you to generate art completely free from API costs.
+
+**Official Website:** https://www.comfy.org/
+
+ComfyUI has both a Desktop and a Portable version. The Portable version is recommended.
+
 ### Setting Up ComfyUI
 
-#### Option 1: Use the Public Server (Easiest)
-The application is pre-configured to use `http://comfyui.meesajarjar.shop:8080` - no setup required!
+#### Option 1: Google Colab (Free, No GPU Required!)
 
-#### Option 2: Run Your Own ComfyUI Server
+ComfyUI can run in Google Colab notebooks for free using their T4 free GPUs, allowing you to generate artwork without needing a good GPU at all!
+
+**Step 1.** Go to https://colab.research.google.com/
+
+**Step 2.** Click "New notebook" button.
+
+**Step 3.** Paste this script into the notebook cell:
+
+```python
+!git clone https://github.com/comfyanonymous/ComfyUI.git
+!cd ComfyUI
+!pip install -r requirements.txt
+!pip install pinggy
+!mkdir -p models/checkpoints
+!wget -O models/checkpoints/sd_xl_base_1.0.safetensors \
+https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true
+
+!wget -O /content/ComfyUI/models/checkpoints/dreamshaper_8.safetensors \
+https://huggingface.co/jzli/DreamShaper-8/resolve/main/dreamshaper_8.safetensors
+
+import pinggy
+
+tunnel = pinggy.start_tunnel(forwardto="localhost:8188")
+
+print("Public URL(s):")
+for url in tunnel.urls:
+    print(url)
+
+!python main.py --listen 0.0.0.0
+```
+
+**Step 4.** Click the Play button to run the script.
+
+**Step 5.** If all works well, about halfway down the output you will see something like this:
+
+```
+Public URL(s):
+http://eyzzg-33-125-104-65.a.free.pinggy.link
+https://eyzzg-33-125-104-65.a.free.pinggy.link
+```
+
+These are public-facing endpoints that allow MeesaMultisMaker to connect to this Google Colab notebook.
+
+**Step 6.** Copy one of those URLs and paste it into the ComfyUI URL field in MeesaMultisMaker (top right corner of the AI Settings panel). **Add `:80` to the end of the URL** since the Google Colab setup uses port 80.
+
+Example: `http://eyzzg-33-125-104-65.a.free.pinggy.link:80`
+
+> **Note:** This Colab notebook automatically terminates when you stop using it, so you will have to run this script each time you want to use the AI features.
+
+#### Option 2: Run Your Own ComfyUI Server (Local)
 
 1. **Install ComfyUI**
    ```bash
@@ -243,6 +299,10 @@ The application is pre-configured to use `http://comfyui.meesajarjar.shop:8080` 
    - Open Settings or the AI Settings panel
    - Set ComfyUI URL to `http://localhost:8080`
    - Click "Test Connection" to verify
+
+#### Option 3: Use the Public Server
+
+The application is pre-configured to use `http://comfyui.meesajarjar.shop:8080`. However, MeesaJarJar only runs this server occasionally upon request, so the Google Colab option or running your own server is recommended.
 
 ### AI Workflows
 
@@ -283,7 +343,7 @@ Selectively regenerate portions of an image:
 | Denoise | Transformation strength | 0.25-0.73 |
 | Sampler | Sampling method | euler |
 | Scheduler | Noise schedule | normal |
-| Resolution | Output size | 512×512 |
+| Resolution | Output size | 512x512 |
 | Drop Black Pixels | Remove dark backgrounds | Enabled |
 | Black Threshold | Darkness cutoff for removal | 15 |
 
@@ -340,8 +400,8 @@ Selectively regenerate portions of an image:
 | + / - | Scale up/down |
 | Shift + +/- | Scale faster |
 | R | Toggle rotate mode |
-| Shift + R | Rotate 15° |
-| Ctrl + R | Rotate -90° |
+| Shift + R | Rotate 15 degrees |
+| Ctrl + R | Rotate -90 degrees |
 | F | Flip horizontal |
 | Shift + F | Flip vertical |
 | K | Toggle skew mode |
@@ -413,6 +473,7 @@ Settings are stored in:
 - Verify ComfyUI is running and accessible
 - Check firewall settings
 - Ensure the URL includes the port (e.g., `http://localhost:8080`)
+- For Google Colab, make sure to add `:80` to the pinggy URL
 - Test with "Test Connection" button
 
 **Missing art/textures**
@@ -430,10 +491,15 @@ Settings are stored in:
 - Ensure selected multis have components
 - Try adjusting kernel size and epochs
 
+**Google Colab session disconnects**
+- Free Colab sessions have time limits and will disconnect after inactivity
+- Simply re-run the script to start a new session
+- You'll get a new pinggy URL each time
+
 ### Getting Help
 
 - **GitHub Issues:** [Report bugs or request features](https://github.com/MeesaJarJar/MeesaMultisMaker/issues)
-- **Discord:** Join our community server for support and sharing creations
+- **Discord:** [Join our community server](https://discord.gg/MpBe7cJDqV) for support and sharing creations
 
 ---
 
@@ -478,11 +544,11 @@ TileID  X   Y   Z   Flags
 This software is provided as **freeware** for personal and commercial use. See the [LICENSE](LICENSE) file for full terms.
 
 **Key Points:**
-- ? Free to use for any lawful purpose
-- ? Free to redistribute (unmodified, with license)
-- ? No reverse engineering or modification
-- ? No warranty provided
-- ? Author not liable for damages
+- Free to use for any lawful purpose
+- Free to redistribute (unmodified, with license)
+- No reverse engineering or modification
+- No warranty provided
+- Author not liable for damages
 
 ---
 
@@ -497,9 +563,9 @@ While the source code is not open for modification per the license, we welcome:
 ---
 
 <p align="center">
-  <strong>Made with ?? for the Ultima Online community</strong>
+  <strong>Made with love for the Ultima Online community</strong>
 </p>
 
 <p align="center">
-  Copyright © 2024-2026 MeesaJarJar. All rights reserved.
+  Copyright 2024-2026 MeesaJarJar. All rights reserved.
 </p>
