@@ -307,8 +307,7 @@ ComfyUI can run in Google Colab notebooks for free using their T4 free GPUs, all
 
 ```python
 !git clone https://github.com/comfyanonymous/ComfyUI.git
-!cd ComfyUI
-!pip install -r requirements.txt
+!pip install -r /content/ComfyUI/requirements.txt
 !pip install pinggy
 !mkdir -p models/checkpoints
 !wget -O models/checkpoints/sd_xl_base_1.0.safetensors \
@@ -325,7 +324,7 @@ print("Public URL(s):")
 for url in tunnel.urls:
     print(url)
 
-!python main.py --listen 0.0.0.0
+!cd /content/ComfyUI && python main.py --listen 0.0.0.0
 ```
 
 **Step 4.** Click the Play button to run the script.
