@@ -14,7 +14,7 @@
   <a href="#installation">Installation</a> •
   <a href="#getting-started">Getting Started</a> •
   <a href="#main-editors">Editors</a> •
-  <a href="#comfyui-integration">ComfyUI Integration</a> •
+  <a href="#ai-integration">AI Integration</a> •
   <a href="#keyboard-shortcuts">Shortcuts</a> •
   <a href="#license">License</a>
 </p>
@@ -23,14 +23,15 @@
 
 ## Overview
 
-**Meesa Multis Maker** is a Windows desktop application for composing, editing, exporting, and AI-regenerating isometric game assets used in Ultima Online-style multis and GUMPs. It provides a powerful canvas for placing item art on an isometric diamond grid with support for complex transforms and integrates AI pipelines (via ComfyUI) for texture and static regeneration.
+**Meesa Multis Maker** is a Windows desktop application for composing, editing, exporting, and AI-regenerating isometric game assets used in Ultima Online-style multis and GUMPs. It provides a powerful canvas for placing item art on an isometric diamond grid with support for complex transforms and integrates AI pipelines for texture and static regeneration.
 
 ### System Requirements
 
 - **OS:** Windows 7 or later
 - **.NET Framework:** 4.7.2 or later
 - **Ultima Online Client:** Required for MUL/UOP asset files
-- **ComfyUI Server:** Optional, for AI image generation features
+- **GPU (Optional):** NVIDIA GPU recommended for Z Image Turbo local AI generation
+- **ComfyUI Server (Optional):** For server-based AI image generation
 
 ---
 
@@ -75,13 +76,28 @@ Create vertical slices of placed images based on selected diamond tiles - perfec
 - Separate locked/unlocked object lists
 - Multi-select lock/unlock operations
 
-### AI Integration (ComfyUI)
+### AI Integration (Dual Backend Support)
+
+Meesa Multis Maker supports **two AI backends** for maximum flexibility:
+
+#### Z Image Turbo (Local - Recommended)
+- **Runs entirely on your local machine** - No server required!
+- **Fast generation** - Optimized GGUF models for quick results
+- **Privacy** - Your images never leave your computer
+- **One-time download** - ~5.2GB model files downloaded automatically
+
+#### ComfyUI (Server-based)
+- **More model options** - Use any Stable Diffusion checkpoint
+- **Advanced workflows** - Inpainting, ControlNet, and more
+- **Remote processing** - Can run on a separate machine or cloud
+
+**AI Features:**
 - **Image-to-Image** - Transform existing sprites with AI
 - **Inpainting** - Selective region regeneration with masks
 - **Text-to-Image** - Generate new assets from text prompts
 - **Batch Processing** - Regenerate multiple selected objects at once
 - **Old/New Toggle** - Compare AI-generated results with originals
-- **Drop Black Pixels** - Automatic background removal for generated images
+- **Drop Black Pixels** - Automatic background removal (adjustable post-generation)
 
 ### Import/Export
 - **Canvas Export** - Save entire canvas as PNG
@@ -153,13 +169,18 @@ Specialized editor for Ultima Online UI graphics (GUMPs).
 - **GUMP palette browser** - Search and filter available GUMPs
 - **Drag-and-drop placement** - Add GUMPs to canvas
 - **Multi-selection** - Select and transform multiple GUMPs
-- **Transform tools** - Scale, rotate, skew
+- **Transform tools:**
+  - Scale (resize with handles or S+/S- buttons)
+  - Rotate (15° increments or free rotation)
+  - Flip Horizontal / Flip Vertical
+  - Skew (adjustable X/Y skew with live preview)
+  - Slice (divide gumps into grid pieces)
 - **Layer management** - Organize GUMPs in layers
-- **AI regeneration:**
+- **AI regeneration (Z Image Turbo or ComfyUI):**
   - Single GUMP regeneration
   - Multi-GUMP combined regeneration (processes as one image, splits result)
   - Alpha mask preservation
-  - Black pixel removal
+  - **Post-generation black pixel adjustment** - Toggle and adjust threshold after AI generation
   - Old/New comparison toggle
   - Revert to original
 - **Custom image import** - Add PNG images as GUMPs
@@ -220,7 +241,7 @@ World map browser with tile/static editing and AI replacement.
 - **Static manipulation:**
   - Move with numpad keys (X, Y, Z)
   - PageUp/PageDown for Z adjustment
-- **AI tile replacement:**
+- **AI tile replacement (Z Image Turbo or ComfyUI):**
   - Replace mode - Simple regeneration
   - Context mode - Context-aware inpainting
   - Batch processing of selected tiles
@@ -281,23 +302,56 @@ World map browser with tile/static editing and AI replacement.
 
 ---
 
-## ComfyUI Integration
+## AI Integration
 
-Meesa Multis Maker integrates with [ComfyUI](https://github.com/comfyanonymous/ComfyUI) for AI-powered image generation and transformation.
+Meesa Multis Maker offers **two AI backends** for image generation:
 
-### What is ComfyUI?
+### Z Image Turbo (Local) - Recommended
 
-ComfyUI is a free open source framework that serves as a bridge that allows users to use the latest technology that exists in the art generation field. It runs on Windows well and uses your local GPU to allow you to generate art completely free from API costs.
+Z Image Turbo runs entirely on your local machine using optimized GGUF models. This is the recommended option for most users.
 
-**Official Website:** https://www.comfy.org/
+**Advantages:**
+- ? No server setup required
+- ? Works offline after initial model download
+- ? Fast generation (~15-20 seconds per image)
+- ? Your images stay private
+- ? Free - no API costs
 
-ComfyUI has both a Desktop and a Portable version. The Portable version is recommended.
+**Requirements:**
+- NVIDIA GPU with 6GB+ VRAM (recommended)
+- ~5.2GB disk space for models
+- Models are downloaded automatically on first use
 
-### Setting Up ComfyUI
+**First-Time Setup:**
+1. Select "Z Image Turbo (Local)" from the AI Backend dropdown
+2. Click "Yes" when prompted to download models
+3. Wait for the download to complete (~5.2GB)
+4. You're ready to generate!
 
-#### Option 1: Google Colab (Free, No GPU Required!)
+**Models Used:**
+- `z_image_turbo-Q2_K.gguf` - Optimized diffusion model
+- `ae.safetensors` - VAE for encoding/decoding
+- `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` - Text encoder (LLM)
 
-ComfyUI can run in Google Colab notebooks for free using their T4 free GPUs, allowing you to generate artwork without needing a good GPU at all!
+### ComfyUI (Server-based)
+
+ComfyUI provides more flexibility with model selection and advanced workflows.
+
+**Advantages:**
+- ? Wide variety of checkpoint models
+- ? Advanced features (ControlNet, inpainting, etc.)
+- ? Can run on a remote server
+- ? More control over generation parameters
+
+**Requirements:**
+- Running ComfyUI server (local or remote)
+- Stable Diffusion checkpoint models
+
+#### Setting Up ComfyUI
+
+##### Option 1: Google Colab (Free, No GPU Required!)
+
+ComfyUI can run in Google Colab notebooks for free using their T4 free GPUs.
 
 **Step 1.** Go to https://colab.research.google.com/
 
@@ -329,23 +383,11 @@ for url in tunnel.urls:
 
 **Step 4.** Click the Play button to run the script.
 
-**Step 5.** If all works well, about halfway down the output you will see something like this:
-
-```
-Public URL(s):
-http://eyzzg-33-125-104-65.a.free.pinggy.link
-https://eyzzg-33-125-104-65.a.free.pinggy.link
-```
-
-These are public-facing endpoints that allow MeesaMultisMaker to connect to this Google Colab notebook.
-
-**Step 6.** Copy one of those URLs and paste it into the ComfyUI URL field in MeesaMultisMaker (top right corner of the AI Settings panel). **Add `:80` to the end of the URL** since the Google Colab setup uses port 80.
+**Step 5.** Copy the pinggy URL and paste it into the ComfyUI URL field. **Add `:80` to the end.**
 
 Example: `http://eyzzg-33-125-104-65.a.free.pinggy.link:80`
 
-> **Note:** This Colab notebook automatically terminates when you stop using it, so you will have to run this script each time you want to use the AI features.
-
-#### Option 2: Run Your Own ComfyUI Server (Local)
+##### Option 2: Run Your Own ComfyUI Server (Local)
 
 1. **Install ComfyUI**
    ```bash
@@ -356,10 +398,8 @@ Example: `http://eyzzg-33-125-104-65.a.free.pinggy.link:80`
 
 2. **Download Required Models**
    Place these in your ComfyUI `models/checkpoints` folder:
-   - **DreamShaper 8** - `dreamshaper_8.safetensors` (recommended for most generation)
-   - **SD 1.5** - `v1-5-pruned-emaonly.ckpt` (for inpainting)
-
-   Download from [Civitai](https://civitai.com/models/4384/dreamshaper) or [Hugging Face](https://huggingface.co/runwayml/stable-diffusion-v1-5)
+   - **DreamShaper 8** - `dreamshaper_8.safetensors`
+   - **SD 1.5** - `v1-5-pruned-emaonly.ckpt`
 
 3. **Start ComfyUI**
    ```bash
@@ -367,51 +407,19 @@ Example: `http://eyzzg-33-125-104-65.a.free.pinggy.link:80`
    ```
 
 4. **Configure in Meesa Multis Maker**
-   - Open Settings or the AI Settings panel
+   - Select "ComfyUI (Server)" from AI Backend dropdown
    - Set ComfyUI URL to `http://localhost:8080`
-   - Click "Test Connection" to verify
-
-#### Option 3: Use the Public Server
-
-The application is pre-configured to use `http://comfyui.meesajarjar.shop:8080`. However, MeesaJarJar only runs this server occasionally upon request, so the Google Colab option or running your own server is recommended.
-
-### AI Workflows
-
-#### Text-to-Image Generation
-Generate new sprites from text descriptions:
-1. Open the AI Image Generator (Painter or standalone)
-2. Enter a positive prompt (e.g., "isometric stone wall, medieval, detailed")
-3. Optionally add negative prompts to exclude unwanted elements
-4. Adjust parameters:
-   - **Steps:** 15-30 (higher = more detail, slower)
-   - **CFG Scale:** 6-8 (higher = stricter prompt adherence)
-   - **Sampler:** `euler` or `euler_ancestral` recommended
-5. Click "Generate"
-
-#### Image-to-Image Transformation
-Transform existing sprites with AI:
-1. Select objects on the canvas
-2. Set denoise strength (0.2-0.5 for subtle changes, 0.6-0.8 for significant changes)
-3. Enter a prompt describing the desired result
-4. Click "Regenerate Selected"
-
-#### Inpainting
-Selectively regenerate portions of an image:
-1. In Map Viewer or Painter, enable mask mode
-2. Paint over areas you want to regenerate (white = regenerate)
-3. Enter a prompt for the new content
-4. Run the inpainting workflow
 
 ### AI Settings Panel Options
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| ComfyUI URL | Server address | `http://comfyui.meesajarjar.shop:8080` |
+| AI Backend | Z Image Turbo (Local) or ComfyUI (Server) | Z Image Turbo |
 | Prompt | Positive prompt for generation | (varies) |
 | Negative Prompt | Elements to avoid | "blurry, low quality..." |
 | Steps | Denoising steps | 20 |
-| CFG Scale | Prompt adherence | 7.0 |
-| Denoise | Transformation strength | 0.25-0.73 |
+| CFG Scale | Prompt adherence | 4.0 |
+| Denoise | Transformation strength | 0.55 |
 | Sampler | Sampling method | euler |
 | Scheduler | Noise schedule | normal |
 | Resolution | Output size | 512x512 |
@@ -422,10 +430,10 @@ Selectively regenerate portions of an image:
 
 | Use Case | Steps | CFG | Denoise | Sampler |
 |----------|-------|-----|---------|---------|
-| Quick Preview | 15 | 6 | 0.3 | euler |
-| Standard Quality | 20 | 7 | 0.4 | euler_ancestral |
-| High Quality | 30 | 7.5 | 0.5 | dpmpp_2m |
-| Inpainting | 20 | 7 | 0.73 | ddpm |
+| Quick Preview | 15 | 4 | 0.4 | euler |
+| Standard Quality | 20 | 4 | 0.55 | euler |
+| High Quality | 30 | 5 | 0.6 | dpmpp_2m |
+| Subtle Changes | 15 | 4 | 0.3 | euler |
 
 ### Prompting Tips
 
@@ -513,6 +521,14 @@ Selectively regenerate portions of an image:
 | Ctrl + +/- | Zoom in/out |
 | Ctrl + 0 | Reset zoom |
 
+### GUMP Editor
+| Key | Action |
+|-----|--------|
+| Delete | Delete selected gump(s) |
+| Ctrl + Z | Undo |
+| Ctrl + Y | Redo |
+| Ctrl + S | Export canvas |
+
 ---
 
 ## Configuration
@@ -522,9 +538,15 @@ Settings are stored in:
 %APPDATA%\MeesaMultisMaker\config.xml
 ```
 
+Z Image Turbo models are stored in:
+```
+%APPDATA%\MeesaMultisMaker\models\
+```
+
 ### Configurable Options
 - MUL folder path
 - PNG art folder path
+- Selected AI backend (Z Image Turbo or ComfyUI)
 - ComfyUI server URL
 - Default AI generation parameters (prompt, steps, CFG, denoise, sampler, scheduler, resolution)
 - Update check preferences
@@ -540,6 +562,12 @@ Settings are stored in:
 - This can occur if image data becomes corrupted. Try reloading the application.
 - Ensure your MUL files are not corrupted.
 
+**Z Image Turbo generation fails**
+- Ensure you have an NVIDIA GPU with sufficient VRAM (6GB+ recommended)
+- Check that the models downloaded completely (~5.2GB total)
+- Look for error messages in the status panel
+- Try regenerating with a smaller resolution (512x512)
+
 **ComfyUI connection fails**
 - Verify ComfyUI is running and accessible
 - Check firewall settings
@@ -552,10 +580,13 @@ Settings are stored in:
 - Check that `art.mul` and `artidx.mul` exist (or `artLegacyMUL.uop` for UOP format)
 
 **AI generation produces black images**
-- Ensure the required checkpoint models are installed in ComfyUI
-- Check ComfyUI console for error messages
 - Enable "Drop Black Pixels" option
-- Adjust the "Black Threshold" if needed
+- Adjust the "Black Threshold" slider after generation
+- For ComfyUI: Ensure checkpoint models are installed
+
+**AI output is wrong size (too large/small)**
+- The AI automatically resizes output to match the original image dimensions
+- If using scaled gumps, the output will match the source image size, not the displayed size
 
 **Multi generation produces empty results**
 - Select at least one multi entry as training data
@@ -594,6 +625,7 @@ TileID  X   Y   Z   Flags
 - `art.mul` / `artidx.mul` - Item and land art
 - `artLegacyMUL.uop` - UOP format art
 - `gumpart.mul` / `gumpidx.mul` - UI graphics
+- `gumpartLegacyMUL.uop` - UOP format gumps
 - `map*.mul` - World map data
 - `statics*.mul` / `staidx*.mul` - Static objects
 - `multi.mul` / `multi.idx` - Multi structures
@@ -604,6 +636,7 @@ TileID  X   Y   Z   Flags
 ## Credits
 
 - **Developer:** MeesaJarJar
+- **Z Image Turbo:** Based on [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
 - **ComfyUI:** [comfyanonymous](https://github.com/comfyanonymous/ComfyUI)
 - **Stable Diffusion:** [Stability AI](https://stability.ai/)
 - **DreamShaper:** [Lykon](https://civitai.com/user/Lykon)
