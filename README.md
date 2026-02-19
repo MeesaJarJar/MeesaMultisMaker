@@ -248,6 +248,45 @@ World map browser with tile/static editing and AI replacement.
 - **Show statics toggle** - View map with or without statics
 - **TileData display** - View item properties
 
+#### Export Map
+
+Export the currently loaded map as a high-resolution isometric image or a set of tiled JPEG files with an interactive HTML viewer.
+
+**Export Options:**
+- **Zoom (px/tile)** - Output resolution from 1 (tiny overview) to 44 (full detail per tile)
+- **Include Static Objects** - Render statics on top of land tiles with hue, translucency, and partial-hue support
+- **Export HTML & Minimap Only** - Regenerate the viewer, minimap, and globe texture without re-rendering tiles (useful for quick iteration)
+- **Generate Mipmap Only** - Rebuild the mipmap pyramid from existing tiles without re-rendering
+- **Region selection** - Export the entire map or a custom rectangular region (Start X/Y, End X/Y)
+
+**Output Modes:**
+
+| Image Size | Output |
+|------------|--------|
+| ? 100 MP | Single PNG, JPEG, or BMP file |
+| > 100 MP | Folder of 512×512 JPEG tiles with HTML viewer |
+
+**Tiled Export Contents:**
+- `tile_R_C.jpg` - Full-resolution rendered tiles (row R, column C)
+- `viewer.html` - Interactive pan/zoom map viewer (open in any browser)
+- `minimap.jpg` - Isometric radar-color overview for quick navigation
+- `globe_texture.png` - Composited image from the coarsest mipmap level, suitable for projecting onto a 3D globe
+- `L1/`, `L2/`, … `LN/` - Mipmap tile pyramids for efficient zoomed-out viewing
+
+**HTML Viewer Features:**
+- Drag to pan, mouse-wheel to zoom
+- Clickable minimap for quick navigation
+- Automatic mipmap level switching when zoomed out
+- Only visible tiles are loaded into the DOM for memory efficiency
+- Zoom buttons: +, ?, 1:1, Fit
+
+**Rendering Details:**
+- Tiles are rendered using textured isometric projection with deformed terrain (Z-height per corner)
+- NoDraw land tiles and statics are automatically filtered out
+- Statics are drawn with correct depth sorting (painter's algorithm), hue coloring, translucency, and foliage layering
+- Tiles are rendered in parallel across all CPU cores for maximum speed
+- Art assets are pre-loaded and serialized to byte arrays so parallel threads never contend on shared GDI+ objects
+
 ---
 
 ## Screenshots Gallery
@@ -445,6 +484,54 @@ Example: `http://eyzzg-33-125-104-65.a.free.pinggy.link:80`
 **Negative prompt suggestions:**
 - "blurry, low quality, distorted, text, watermark, signature"
 - "modern, sci-fi, photo-realistic" (if you want stylized results)
+
+---
+
+## Z Image Turbo Expectations (For AI Assistants)
+
+If you are guiding another AI on how Z Image Turbo is expected to work in this project, follow this contract:
+
+### Required Flow
+1. UI/forms call `AIGenerationHelper.GenerateImage(...)`.
+2. `ImageGeneratorFactory` selects `ZImageGenerator` when `AIBackend.ZImageTurbo` is active.
+3. `ZImageGenerator` creates `ZImageRequest` via `ZImageWorkflow` helpers.
+4. `ZImageClient` executes `sd-cli.exe` using the command from `ZImageWorkflow.BuildCommand(...)`.
+
+### Prompt/Command Construction (Single Source of Truth)
+Use `ZImage/ZImageWorkflow.cs` to build all `sd-cli.exe` arguments. This file owns:
+- prompt (`-p`), negative prompt (`-n`)
+- resolution (`-H`/`-W`)
+- CFG scale (`--cfg-scale`)
+- steps (`--steps`), seed (`--seed`)
+- img2img input (`-i`) and denoise (`--strength`)
+- performance flags (`--offload-to-cpu`, `--diffusion-fa`, `--vae-tiling`)
+- output (`-o`)
+
+### Required Models and Location
+Models must exist under:
+`%AppData%\MeesaMultisMaker\models\`
+
+Required files:
+- `z_image_turbo-Q2_K.gguf`
+- `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`
+- `ae.safetensors`
+- `sd-cli.exe`
+
+### Execution Details
+`sd-cli.exe` must be executed with working directory set to the models folder above. Availability is true only when all files exist.
+
+### Do Not Bypass the Abstraction
+Do not call `sd-cli.exe` directly from UI code. All usage must flow through `AIGenerationHelper` or `IImageGenerator`.
+
+### Target Framework
+Project targets `.NET Framework 4.7.2`; avoid APIs that require newer frameworks.
+
+### Authoritative Files
+- `ZImage/ZImageWorkflow.cs`
+- `ZImage/ZImageClient.cs`
+- `ZImage/ZImageModelDownloader.cs`
+- `AI/ZImageGenerator.cs`
+- `Helpers/AIGenerationHelper.cs`
 
 ---
 
