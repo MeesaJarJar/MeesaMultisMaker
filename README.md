@@ -33,6 +33,14 @@
 - **GPU (Optional):** NVIDIA GPU recommended for Z Image Turbo local AI generation
 - **ComfyUI Server (Optional):** For server-based AI image generation
 
+### What's New in v1.02
+
+- Added `Direct Inference (Flux.2 Klein)` backend option
+- Added Flux.2 Klein model/VAE support in local generation flow
+- Unified backend options across main editor, map editor, and gump editor
+- Improved AI generation logs with elapsed-time output
+- UI refinement for local backends (ComfyUI URL controls hidden when not needed)
+
 ---
 
 ## Features
@@ -76,9 +84,15 @@ Create vertical slices of placed images based on selected diamond tiles - perfec
 - Separate locked/unlocked object lists
 - Multi-select lock/unlock operations
 
-### AI Integration (Dual Backend Support)
+### AI Integration (Multi-Backend Support)
 
-Meesa Multis Maker supports **two AI backends** for maximum flexibility:
+Meesa Multis Maker supports **three AI backends** for maximum flexibility:
+
+#### Direct Inference (Flux.2 Klein, Local - Default)
+- **Runs entirely on your local machine** - No server required
+- Uses Flux.2 Klein model path: `flux-2-klein-4b-Q2_K.gguf`
+- Uses Flux2 VAE path: `flux2-vae.safetensors`
+- Recommended for local quality-focused img2img workflows
 
 #### Z Image Turbo (Local - Recommended)
 - **Runs entirely on your local machine** - No server required!
@@ -176,7 +190,7 @@ Specialized editor for Ultima Online UI graphics (GUMPs).
   - Skew (adjustable X/Y skew with live preview)
   - Slice (divide gumps into grid pieces)
 - **Layer management** - Organize GUMPs in layers
-- **AI regeneration (Z Image Turbo or ComfyUI):**
+- **AI regeneration (Direct Inference, Z Image Turbo, or ComfyUI):**
   - Single GUMP regeneration
   - Multi-GUMP combined regeneration (processes as one image, splits result)
   - Alpha mask preservation
@@ -241,7 +255,7 @@ World map browser with tile/static editing and AI replacement.
 - **Static manipulation:**
   - Move with numpad keys (X, Y, Z)
   - PageUp/PageDown for Z adjustment
-- **AI tile replacement (Z Image Turbo or ComfyUI):**
+- **AI tile replacement (Direct Inference, Z Image Turbo, or ComfyUI):**
   - Replace mode - Simple regeneration
   - Context mode - Context-aware inpainting
   - Batch processing of selected tiles
@@ -343,7 +357,21 @@ Export the currently loaded map as a high-resolution isometric image or a set of
 
 ## AI Integration
 
-Meesa Multis Maker offers **two AI backends** for image generation:
+Meesa Multis Maker offers **three AI backends** for image generation:
+
+### Direct Inference (Flux.2 Klein, Local) - Default
+
+Direct Inference uses Flux.2 Klein locally through `sd-cli` without requiring a ComfyUI server.
+
+**Advantages:**
+- ? No server setup required
+- ? High-quality local img2img workflow
+- ? Uses the same local generation flow across editors
+
+**Models Used:**
+- `flux-2-klein-4b-Q2_K.gguf` - Flux.2 Klein diffusion model
+- `flux2-vae.safetensors` - Flux2 VAE
+- `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` - Text encoder (LLM)
 
 ### Z Image Turbo (Local) - Recommended
 
@@ -633,7 +661,7 @@ Z Image Turbo models are stored in:
 ### Configurable Options
 - MUL folder path
 - PNG art folder path
-- Selected AI backend (Z Image Turbo or ComfyUI)
+- Selected AI backend (Direct Inference, Z Image Turbo, or ComfyUI)
 - ComfyUI server URL
 - Default AI generation parameters (prompt, steps, CFG, denoise, sampler, scheduler, resolution)
 - Update check preferences
