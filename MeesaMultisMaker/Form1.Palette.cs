@@ -306,14 +306,14 @@ namespace MeesaMultisMaker
                 return;
             }
 
-            // Right-click on non-empty item � show context menu
+            // Right-click on non-empty item - show context menu
             if (e.Button == MouseButtons.Right)
             {
                 ShowPaletteItemContextMenu(imageInfo.ItemId, e.Location);
                 return;
             }
 
-            // Ctrl/Shift clicks are for selection � don't start drag yet.
+            // Ctrl/Shift clicks are for selection - don't start drag yet.
             // The ListView handles multi-select automatically.
             if ((ModifierKeys & (Keys.Control | Keys.Shift)) != 0)
                 return;
@@ -827,7 +827,7 @@ namespace MeesaMultisMaker
                 var flags = flagsStr.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
                 foreach (var flag in flags)
                 {
-                    sb.AppendLine($"  � {flag}");
+                    sb.AppendLine($"  - {flag}");
                 }
             }
 
@@ -851,7 +851,7 @@ namespace MeesaMultisMaker
 
             // Push single item to JarJar (grayed while the feature is off)
             {
-                var pushItem = new ToolStripMenuItem("\u2601 Push to MeesaJarJar");
+                var pushItem = new ToolStripMenuItem("Push to MeesaJarJar");
                 pushItem.ForeColor = Color.FromArgb(180, 100, 255);
                 pushItem.Tag = itemId;
                 pushItem.Click += PushSingleItemToJarJar_Click;
@@ -864,7 +864,7 @@ namespace MeesaMultisMaker
 
                 menu.Items.Add(pushItem);
 
-                var pullItem = new ToolStripMenuItem("\u2193 Pull from MeesaJarJar");
+                var pullItem = new ToolStripMenuItem("Pull from MeesaJarJar");
                 pullItem.ForeColor = Color.FromArgb(100, 180, 255);
                 pullItem.Tag = itemId;
                 pullItem.Click += PullSingleItemFromJarJar_Click;
@@ -922,7 +922,7 @@ namespace MeesaMultisMaker
                     jarjarPendingChanges.Remove(itemId);
                     UpdatePendingChangesUI();
                     SetAIStatus($"Pushed 0x{itemId:X4}", HolographicTheme.ButtonSuccess);
-                    OutputLog($"Pushed 0x{itemId:X4} to JarJar \u2014 clients update in ~30s");
+                    OutputLog($"Pushed 0x{itemId:X4} to JarJar - clients update in ~30s");
                 }
                 else
                 {
@@ -1001,7 +1001,7 @@ namespace MeesaMultisMaker
         {
             var form = new Form
             {
-                Text = $"JarJar Comparison � 0x{itemId:X4} (Atlas {entry.AtlasIndex} @ {entry.X},{entry.Y})",
+                Text = $"JarJar Comparison - 0x{itemId:X4} (Atlas {entry.AtlasIndex} @ {entry.X},{entry.Y})",
                 Width = 500,
                 Height = 350,
                 StartPosition = FormStartPosition.CenterParent,
@@ -1061,7 +1061,7 @@ namespace MeesaMultisMaker
             };
             form.Controls.Add(localPic);
 
-            // "Use Server Art" button � replaces local with server version
+            // "Use Server Art" button - replaces local with server version
             var useServerBtn = new Button
             {
                 Text = "Use Server Art",

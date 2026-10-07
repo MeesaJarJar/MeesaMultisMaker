@@ -292,7 +292,7 @@ namespace MeesaMultisMaker
  return;
  }
  
- // R = Toggle Rotate mode (free rotation), Shift+R = rotate 15�, Ctrl+R = rotate -90�
+ // R = Toggle Rotate mode (free rotation), Shift+R = rotate 15deg, Ctrl+R = rotate -90deg
  if (e.KeyCode == Keys.R && !isSkewMode && !isRotateMode)
  {
  if (e.Shift)

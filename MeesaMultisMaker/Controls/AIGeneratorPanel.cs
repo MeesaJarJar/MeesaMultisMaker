@@ -1472,7 +1472,7 @@ namespace MeesaMultisMaker.Controls
             // Push to MeesaJarJar button
             pushToJarJarBtn = new Button
             {
-                Text = "\u2601 Push to JarJar",
+                Text = "Push to JarJar",
                 Left = 5,
                 Top = y,
                 Width = ctrlWidth,

@@ -322,7 +322,7 @@ namespace MeesaMultisMaker
             var sb = new StringBuilder();
             sb.AppendLine($"Validation: {title}");
             sb.AppendLine($"Components: {comps.Count}");
-            sb.AppendLine($"Status: {(result.IsValid ? "✓ VALID" : "✗ INVALID")}");
+            sb.AppendLine($"Status: {(result.IsValid ? "VALID" : "INVALID")}");
             sb.AppendLine();
 
             // Floor level summary
@@ -396,7 +396,7 @@ namespace MeesaMultisMaker
             {
                 sb.AppendLine("═══ Errors ═══");
                 foreach (var err in result.Errors)
-                    sb.AppendLine($"  ✗ {err}");
+                    sb.AppendLine($"  ERROR {err}");
                 sb.AppendLine();
             }
 
@@ -404,7 +404,7 @@ namespace MeesaMultisMaker
             {
                 sb.AppendLine("═══ Warnings ═══");
                 foreach (var warn in result.Warnings)
-                    sb.AppendLine($"  ⚠ {warn}");
+                    sb.AppendLine($"  ! {warn}");
                 sb.AppendLine();
             }
 

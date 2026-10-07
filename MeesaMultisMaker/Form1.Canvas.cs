@@ -179,7 +179,7 @@ namespace MeesaMultisMaker
 
                     string transformTxt = "";
                     if (obj.Scale != 1.0f) transformTxt += $"S:{obj.Scale:F1} ";
-                    if (obj.Rotation != 0f) transformTxt += $"R:{obj.Rotation:F0}� ";
+                    if (obj.Rotation != 0f) transformTxt += $"R:{obj.Rotation:F0}deg ";
                     if (obj.FlipHorizontal) transformTxt += "FH ";
                     if (obj.FlipVertical) transformTxt += "FV ";
                     if (obj.HasSkew) transformTxt += "Skew ";
@@ -223,7 +223,7 @@ namespace MeesaMultisMaker
                 using (var font = new Font("Consolas", 10, FontStyle.Bold))
                 using (var brush = new SolidBrush(Color.FromArgb(200, Color.Orange)))
                 {
-                    g.DrawString($"ROTATE MODE - {selectedObject.Rotation:F1}� (Drag handle to rotate, Esc to exit)", font, brush, 10, 10);
+                    g.DrawString($"ROTATE MODE - {selectedObject.Rotation:F1}deg (Drag handle to rotate, Esc to exit)", font, brush, 10, 10);
                 }
 
                 // Draw rotation handle
@@ -760,7 +760,7 @@ namespace MeesaMultisMaker
         {
             if (selectedObject != null)
             {
-                string info = $"Scale: {selectedObject.Scale:F2}x | Rotation: {selectedObject.Rotation:F0}� | ";
+                string info = $"Scale: {selectedObject.Scale:F2}x | Rotation: {selectedObject.Rotation:F0}deg | ";
                 info += $"Flip: {(selectedObject.FlipHorizontal ? "H" : "-")}{(selectedObject.FlipVertical ? "V" : "-")} | ";
                 info += $"Offset: ({selectedObject.PixelOffsetX}, {selectedObject.PixelOffsetY})";
                 if (selectedObject.HasSkew) info += " | Skewed";

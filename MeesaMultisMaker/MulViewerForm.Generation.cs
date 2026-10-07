@@ -281,7 +281,7 @@ namespace MeesaMultisMaker
                     // Early exit if high-quality result (few violations, coherent Z, all tiles)
                     if (violations == 0 && zMismatches <= 2 && hasAllClasses && parts > 0)
                     {
-                        LogMessage($"  ✓ High-quality result at attempt {epoch}!");
+                        LogMessage($"  OK High-quality result at attempt {epoch}!");
                         break;
                     }
                 }
@@ -330,9 +330,9 @@ namespace MeesaMultisMaker
                 {
                     LogMessage("── Multi Validation ──");
                     foreach (var err in validation.Errors)
-                        LogMessage($"  ✗ {err}");
+                        LogMessage($"  ERROR {err}");
                     foreach (var warn in validation.Warnings)
-                        LogMessage($"  ⚠ {warn}");
+                        LogMessage($"  WARN {warn}");
                 }
 
                 foreach (var comp in generatedComponents)

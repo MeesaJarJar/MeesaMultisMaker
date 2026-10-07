@@ -169,7 +169,7 @@ namespace MeesaMultisMaker
             {
                 _cancelExportButton = new Button
                 {
-                    Text = "❌ Cancel Export",
+                    Text = "X Cancel Export",
                     Width = 140,
                     Height = 32,
                     FlatStyle = FlatStyle.Flat,
@@ -2811,17 +2811,17 @@ render();update();
 
                 if (dimensionTooLarge)
                 {
-                    sizeText += $"\n❌ ERROR: Dimensions exceed GDI+ limit!\n   (Max: {MAX_DIMENSION:N0} px per side)\n   Reduce zoom or use Tiled Export.";
+                    sizeText += $"\nX ERROR: Dimensions exceed GDI+ limit!\n   (Max: {MAX_DIMENSION:N0} px per side)\n   Reduce zoom or use Tiled Export.";
                     textColor = Color.Red;
                 }
                 else if (memGB >= 4)
                 {
-                    sizeText += "\n⚠ Very large export - may take several minutes.\n   Ensure you have enough free RAM.";
+                    sizeText += "\n! Very large export - may take several minutes.\n   Ensure you have enough free RAM.";
                     textColor = Color.Orange;
                 }
                 else if (veryLarge)
                 {
-                    sizeText += "\n⚠ Large export - may take a minute or two.";
+                    sizeText += "\n! Large export - may take a minute or two.";
                     textColor = Color.Orange;
                 }
                 else

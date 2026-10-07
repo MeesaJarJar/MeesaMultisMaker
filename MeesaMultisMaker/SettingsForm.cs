@@ -403,7 +403,7 @@ namespace MeesaMultisMaker
             y += 45;
 
             // ===== MEESAJARJAR SECTION =====
-            var jarjarHeader = CreateSectionHeader("\u2601 MeesaJarJar.com Settings", 10, y);
+            var jarjarHeader = CreateSectionHeader("MeesaJarJar.com Settings", 10, y);
             jarjarHeader.ForeColor = Color.FromArgb(180, 100, 255);
             mainPanel.Controls.Add(jarjarHeader);
             y += 30;
@@ -884,19 +884,19 @@ namespace MeesaMultisMaker
                     if (connected)
                     {
                         var lookup = await client.GetLookupTableAsync();
-                        statusLabel.Text = $"\u2713 Connected to MeesaJarJar — {lookup.EntryCount} sprites in lookup table";
+                        statusLabel.Text = $"OK Connected to MeesaJarJar — {lookup.EntryCount} sprites in lookup table";
                         statusLabel.ForeColor = Color.FromArgb(180, 100, 255);
                     }
                     else
                     {
-                        statusLabel.Text = "\u2717 Could not connect to MeesaJarJar server";
+                        statusLabel.Text = "ERROR Could not connect to MeesaJarJar server";
                         statusLabel.ForeColor = Color.Red;
                     }
                 }
             }
             catch (Exception ex)
             {
-                statusLabel.Text = $"\u2717 JarJar error: {ex.Message}";
+                statusLabel.Text = $"ERROR JarJar error: {ex.Message}";
                 statusLabel.ForeColor = Color.Red;
             }
             finally

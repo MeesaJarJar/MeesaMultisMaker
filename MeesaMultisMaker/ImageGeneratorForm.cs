@@ -1,4 +1,4 @@
-﻿using MeesaMultisMaker.ComfyUI;
+﻿﻿﻿using MeesaMultisMaker.ComfyUI;
 using MeesaMultisMaker.Utils;
 using System;
 using System.Drawing;
@@ -79,13 +79,13 @@ namespace MeesaMultisMaker
             var connected = await _comfyClient.TestConnection();
             if (connected)
             {
-                statusLabel.Text = $"✓ Connected to ComfyUI at {comfyUrlTextBox.Text}";
+                statusLabel.Text = $"OK Connected to ComfyUI at {comfyUrlTextBox.Text}";
                 statusLabel.ForeColor = Color.Green;
                 generateButton.Enabled = true;
             }
             else
             {
-                statusLabel.Text = $"✗ ComfyUI not detected at {comfyUrlTextBox.Text}";
+                statusLabel.Text = $"ERROR ComfyUI not detected at {comfyUrlTextBox.Text}";
                 statusLabel.ForeColor = Color.Red;
                 generateButton.Enabled = false;
             }
@@ -789,7 +789,7 @@ namespace MeesaMultisMaker
                     previewPictureBox.Image = _generatedImage;
                 }
 
-                statusLabel.Text = $"✓ Generated successfully! ({images[0].Filename})";
+                statusLabel.Text = $"OK Generated successfully! ({images[0].Filename})";
                 statusLabel.ForeColor = Color.Green;
                 saveButton.Enabled = true;
                 useAsReferenceButton.Enabled = true;

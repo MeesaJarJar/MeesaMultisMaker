@@ -784,7 +784,7 @@ namespace MeesaMultisMaker
             menu.Items.Add(new ToolStripSeparator());
 
             // Push single item to JarJar (grayed while the feature is off)
-            var pushItem = new ToolStripMenuItem("\u2601 Push to MeesaJarJar");
+            var pushItem = new ToolStripMenuItem("Push to MeesaJarJar");
             pushItem.ForeColor = Color.FromArgb(180, 100, 255);
             pushItem.Tag = itemId;
             pushItem.Click += PalettePushToJarJar_Click;
@@ -793,7 +793,7 @@ namespace MeesaMultisMaker
                 pushItem.Text += AppConfig.Instance.JarJarPushEnabled ? " (no pending changes)" : " (disabled)";
             menu.Items.Add(pushItem);
 
-            var pullItem = new ToolStripMenuItem("\u2193 Pull from MeesaJarJar");
+            var pullItem = new ToolStripMenuItem("Pull from MeesaJarJar");
             pullItem.ForeColor = Color.FromArgb(100, 180, 255);
             pullItem.Tag = itemId;
             pullItem.Click += PalettePullFromJarJar_Click;

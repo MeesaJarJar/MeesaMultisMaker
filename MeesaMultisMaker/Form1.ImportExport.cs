@@ -1691,7 +1691,7 @@ var settings = GetAISettingsFromPanel();
             else
             {
                 designPictureBox.Invalidate();
-                SetAIStatus($"✓ Reverted {revertedCount} object(s)", Color.Green);
+                SetAIStatus($"OK Reverted {revertedCount} object(s)", Color.Green);
                 UpdatePendingChangesUI();
             }
         }
@@ -1837,7 +1837,7 @@ var settings = GetAISettingsFromPanel();
             }
 
             designPictureBox.Invalidate();
-            SetAIStatus(string.Format("✓ Unified {0} ID(s) ({1} object(s))", unifiedIds, unifiedObjects), Color.Green);
+            SetAIStatus(string.Format("OK Unified {0} ID(s) ({1} object(s))", unifiedIds, unifiedObjects), Color.Green);
             UpdatePendingChangesUI();
         }
 
@@ -2036,7 +2036,7 @@ var settings = GetAISettingsFromPanel();
             else
             {
                 designPictureBox.Invalidate();
-                SetAIStatus($"✓ Reverted {revertedCount} object(s) to OG art", Color.Green);
+                SetAIStatus($"OK Reverted {revertedCount} object(s) to OG art", Color.Green);
                 UpdatePendingChangesUI();
             }
             if (skippedCount > 0)

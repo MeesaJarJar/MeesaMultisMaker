@@ -130,22 +130,6 @@ namespace MeesaMultisMaker
             buttonTooltip.SetToolTip(lockSelectedButton, "Lock selected object (prevents movement)");
             buttonTooltip.SetToolTip(unlockSelectedButton, "Unlock selected object (allows movement)");
 
-            // Discord button - opens Discord invite link
-            var discordBtn = CreateThemedButton("Discord", 555, 12, 70, ButtonStyle.Accent);
-            discordBtn.Click += (s, e) =>
-            {
-                try
-                {
-                    System.Diagnostics.Process.Start("https://discord.com/invite/MpBe7cJDqV");
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to open Discord link: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            };
-            buttonTooltip.SetToolTip(discordBtn, "Join our Discord community for support and sharing creations");
-            this.controlsPanel.Controls.Add(discordBtn);
-
             // Generation buttons - Row 2 (temporarily removed: Add as Training, Generate Variant, Clear Training)
             // Settings button moved here
             var settingsBtn = CreateThemedButton("Settings", 10, 42, 80, ButtonStyle.Default);
@@ -585,12 +569,12 @@ namespace MeesaMultisMaker
             buttonTooltip.SetToolTip(audioBtn, "Generate SFX, music and voice with ComfyUI; edit audio and write UO sound.mul slots");
             this.controlsPanel.Controls.Add(audioBtn);
 
-            var sendSelToMapUnderBtn = CreateThemedButton("Sel?Map U", 10, 70, 95, ButtonStyle.Accent);
+            var sendSelToMapUnderBtn = CreateThemedButton("Sel>Map U", 10, 70, 95, ButtonStyle.Accent);
             sendSelToMapUnderBtn.Click += (s, e) => SendCurrentCanvasImageToMap(false);
             buttonTooltip.SetToolTip(sendSelToMapUnderBtn, "Send selected canvas object (or full canvas) to Map Editor as underlay");
             this.controlsPanel.Controls.Add(sendSelToMapUnderBtn);
 
-            var sendSelToMapOverBtn = CreateThemedButton("Sel?Map O", 110, 70, 95, ButtonStyle.Accent);
+            var sendSelToMapOverBtn = CreateThemedButton("Sel>Map O", 110, 70, 95, ButtonStyle.Accent);
             sendSelToMapOverBtn.Click += (s, e) => SendCurrentCanvasImageToMap(true);
             buttonTooltip.SetToolTip(sendSelToMapOverBtn, "Send selected canvas object (or full canvas) to Map Editor as overlay");
             this.controlsPanel.Controls.Add(sendSelToMapOverBtn);
@@ -1205,7 +1189,7 @@ namespace MeesaMultisMaker
         {
             using (var dlg = new Form())
             {
-                dlg.Text = "MEESA MULTIS MAKER � LICENSE";
+                dlg.Text = "MEESA MULTIS MAKER - LICENSE";
                 dlg.Width = 700;
                 dlg.Height = 600;
                 dlg.StartPosition = FormStartPosition.CenterScreen;

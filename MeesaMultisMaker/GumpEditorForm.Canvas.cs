@@ -446,7 +446,7 @@ namespace MeesaMultisMaker
                     using (var font = new Font("Consolas", 8))
                     using (var brush = new SolidBrush(HolographicTheme.CyanAccent))
                     {
-                        g.DrawString($"{gump.Rotation:F1}�", font, brush, dx + dw + 5, dy);
+                        g.DrawString($"{gump.Rotation:F1}deg", font, brush, dx + dw + 5, dy);
                     }
                 }
             }
@@ -1057,7 +1057,7 @@ namespace MeesaMultisMaker
                 selectedGumps.Add(gump);
 
                 canvasBox.Invalidate();
-                SetStatus($"Pasted image from clipboard ({img.Width}�{img.Height})");
+                SetStatus($"Pasted image from clipboard ({img.Width}x{img.Height})");
             }
             catch (Exception ex)
             {

@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="#features">Features</a> �
-  <a href="https://discord.gg/MpBe7cJDqV">Discord</a>  �
   <a href="#installation">Installation</a> �
   <a href="#getting-started">Getting Started</a> �
   <a href="#main-editors">Editors</a> �
@@ -32,6 +31,8 @@
 - **Ultima Online Client:** Required for MUL/UOP asset files
 - **GPU (Optional):** NVIDIA GPU recommended for local model inference (LLM, vision, audio gates) and local ComfyUI
 - **ComfyUI Server (Optional):** For server-based AI image generation
+- **Python 3.12 + ffmpeg (Optional):** Audio quality gates (vocal bouncer, CLAP match, captions) via `pip install faster-whisper laion-clap transformers librosa torch torchvision`
+- **llama.cpp server binary (Optional):** `llama-server.exe` beside its `ggml-*.dll` files in `MeesaMultisMaker/LLM/bin/` for local LLM/vision features (weights auto-download)
 
 ---
 
@@ -209,6 +210,21 @@ Browser for viewing and generating multi structures from MUL files.
   - Neural network (SimpleCnn)
   - Wave Function Collapse (WFC)
 - Generate new structures based on learned patterns
+
+### 3D Editor
+
+Text-to-3D sprite pipeline ("MultisMaker1"): prompt ComfyUI for a model, orbit it through the 8 UO facings, slice it into floor-aligned UO tiles, and send the tiles to the canvas.
+
+- **Text to PLY** - prompt, seed, sampler steps; optional init image (including straight from the Painter)
+- **Viewport** - orbit/zoom, 8 UO facing snap, UO-mode pitch lock, splat-density cap for previews
+- **Tile slicing** - hard-cut by floor cell with 3x3 hollow-expand, origin-relative send, calibrated 44px export
+- **Dials** - rotation/scale bake into positions (uniform-lockable), debounced re-slice
+- **Loop mode** - auto-resubmit forever (fresh image and/or fresh LLM-dreamed prompt each round)
+- **Spintable export** - 24-frame rotation sheets (+ GIF)
+
+### Animation Editor
+
+Viewer/player/editor for Ultima Online mobile animations (`anim.mul` family): scrub frames, edit, and export PNG sequences. See the full guides in [`docs/`](MeesaMultisMaker/docs/): `ANIMATION_EDITOR_GUIDE.md`, `ANIMATION_EDITOR_QUICK_REF.md`, `ANIMATION_EDITOR_TROUBLESHOOTING.md`.
 
 ### Audio Editor
 
@@ -554,12 +570,14 @@ Settings are stored in:
 %APPDATA%\MeesaMultisMaker\config.xml
 ```
 
+Audio generations live in `Documents\MeesaMultisMaker\Audio\` (`library.jsonl` prompt ledger, `AudioPrompts.csv` pipe-delimited prompt log, rendered clips).
+
 ### Configurable Options
 - MUL folder path
 - PNG art folder path
 - ComfyUI server URL
-- ComfyUI server URL
 - Default AI generation parameters (prompt, steps, CFG, denoise, sampler, scheduler, resolution)
+- Audio watcher cadence, scene-change threshold, vocal bouncer, CLAP gate
 - Update check preferences
 - Window position preferences
 
@@ -606,7 +624,6 @@ Settings are stored in:
 ### Getting Help
 
 - **GitHub Issues:** [Report bugs or request features](https://github.com/MeesaJarJar/MeesaMultisMaker/issues)
-- **Discord:** [Join our community server](https://discord.gg/MpBe7cJDqV) for support and sharing creations
 
 ---
 

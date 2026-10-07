@@ -533,7 +533,7 @@ namespace MeesaMultisMaker.Utils
             Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
 
             // Scale intensity to a reasonable noise range
-            double noiseScale = intensity / 100.0 * 50; // Max noise of ±25 at full intensity
+            double noiseScale = intensity / 100.0 * 50; // Max noise of +/-25 at full intensity
 
             for (int i = 0; i < bytes; i += 4)
             {

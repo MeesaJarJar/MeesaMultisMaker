@@ -210,7 +210,7 @@ namespace MeesaMultisMaker.Dialogs
             // Detect button
             detectButton = new Button
             {
-                Text = "🔍 Re-Detect Sprites",
+                Text = "Re-Detect Sprites",
                 Location = new Point(10, y),
                 Width = 240,
                 Height = 35
@@ -223,7 +223,7 @@ namespace MeesaMultisMaker.Dialogs
             // Info label
             var infoLabel = new Label
             {
-                Text = "💡 Tip: Adjust tolerance if sprites\naren't detected correctly.\n\nRed boxes show detected sprites.",
+                Text = "Tip: Adjust tolerance if sprites\naren't detected correctly.\n\nRed boxes show detected sprites.",
                 Location = new Point(10, y),
                 Width = 240,
                 Height = 80,
@@ -305,7 +305,7 @@ namespace MeesaMultisMaker.Dialogs
             finally
             {
                 detectButton.Enabled = true;
-                detectButton.Text = "🔍 Re-Detect Sprites";
+                detectButton.Text = "Re-Detect Sprites";
             }
         }
 

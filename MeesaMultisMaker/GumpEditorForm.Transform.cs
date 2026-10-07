@@ -149,7 +149,7 @@ namespace MeesaMultisMaker
             }
 
             selectedGump.Rotation = newRotation % 360;
-            SetStatus($"Rotation: {selectedGump.Rotation:F1}°");
+            SetStatus($"Rotation: {selectedGump.Rotation:F1}deg");
         }
 
         // Transform methods
@@ -162,7 +162,7 @@ namespace MeesaMultisMaker
                 gump.Rotation = (gump.Rotation + degrees) % 360;
             }
             canvasBox.Invalidate();
-            SetStatus($"Rotated {selectedGumps.Count} gump(s) by {degrees}°");
+            SetStatus($"Rotated {selectedGumps.Count} gump(s) by {degrees}deg");
         }
 
         private void ScaleSelected(float factor)

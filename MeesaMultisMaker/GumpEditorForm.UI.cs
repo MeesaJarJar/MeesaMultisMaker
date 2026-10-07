@@ -473,13 +473,13 @@ namespace MeesaMultisMaker
             // Transform buttons
             var rotateLeftBtn = CreateThemedButton("?", x, y, 30, ButtonStyle.Default);
             rotateLeftBtn.Click += (s, e) => RotateSelected(-15);
-            tooltip.SetToolTip(rotateLeftBtn, "Rotate selected 15� counter-clockwise");
+            tooltip.SetToolTip(rotateLeftBtn, "Rotate selected 15deg counter-clockwise");
             controlsPanel.Controls.Add(rotateLeftBtn);
             x += 35;
 
             var rotateRightBtn = CreateThemedButton("?", x, y, 30, ButtonStyle.Default);
             rotateRightBtn.Click += (s, e) => RotateSelected(15);
-            tooltip.SetToolTip(rotateRightBtn, "Rotate selected 15� clockwise");
+            tooltip.SetToolTip(rotateRightBtn, "Rotate selected 15deg clockwise");
             controlsPanel.Controls.Add(rotateRightBtn);
             x += 35;
 

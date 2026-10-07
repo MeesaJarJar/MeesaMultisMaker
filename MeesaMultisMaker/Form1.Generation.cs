@@ -173,9 +173,9 @@ namespace MeesaMultisMaker
         {
             outputTextBox.AppendText("── Multi Validation ──\r\n");
             foreach (var err in validation.Errors)
-                outputTextBox.AppendText($"  ✗ {err}\r\n");
+                outputTextBox.AppendText($"  ERROR {err}\r\n");
             foreach (var warn in validation.Warnings)
-                outputTextBox.AppendText($"  ⚠ {warn}\r\n");
+                outputTextBox.AppendText($"  WARN {warn}\r\n");
         }
 
         // Clear canvas and place generated structure

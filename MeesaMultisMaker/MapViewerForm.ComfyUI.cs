@@ -3204,7 +3204,7 @@ try
                         modifiedStaticArtCache[itemId] = slice;
                         MarkArtModified(itemId, slice);
 
-                        detailsTextBox.AppendText($"\u2713 Replaced 0x{itemId:X4}\r\n");
+                        detailsTextBox.AppendText($"OK Replaced 0x{itemId:X4}\r\n");
                     }
                 }
 

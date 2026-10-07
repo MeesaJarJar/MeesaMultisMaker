@@ -1564,7 +1564,7 @@ namespace MeesaMultisMaker
             comfySettingsPanel.Controls.Add(saveStatusLabel);
             y += 22;
 
-            // Save Map button � saves to iteration folder
+            // Save Map button -> saves to iteration folder
             saveMapButton = new Button
             {
                 Text = "Save Map",
@@ -1681,7 +1681,7 @@ namespace MeesaMultisMaker
 
             var pushToJarJarButton = new Button
             {
-                Text = "\u2601 Push to JarJar",
+                Text = "Push to JarJar",
                 Location = new Point(10, y + 28),
                 Width = 175,
                 Height = 24,
@@ -1700,7 +1700,7 @@ namespace MeesaMultisMaker
 
             var pullFromJarJarButton = new Button
             {
-                Text = "\u2193 Pull U/O",
+                Text = "Pull U/O",
                 Location = new Point(192, y + 28),
                 Width = 118,
                 Height = 24
