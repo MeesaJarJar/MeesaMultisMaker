@@ -1,0 +1,264 @@
+public class SDXLTurboWorkflow
+    {
+        public static string CreateWorkflow(string positivePrompt, string negativePrompt = "", 
+            int width = 1024, int height = 1024, int steps = 2, double denoise = 1.0, long? seed = null)
+     {
+            if (!seed.HasValue)
+       seed = new Random().Next();
+
+   // Escape JSON strings
+    positivePrompt = positivePrompt.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+   negativePrompt = negativePrompt.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+
+      return $@"{{
+  ""3"": {{
+""inputs"": {{
+""seed"": {seed},
+   ""steps"": {steps},
+      ""cfg"": 1,
+      ""sampler_name"": ""euler"",
+      ""scheduler"": ""sgm_uniform"",
+      ""denoise"": {denoise.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)},
+      ""model"": [""4"", 0],
+      ""positive"": [""16"", 0],
+    ""negative"": [""40"", 0],
+    ""latent_image"": [""53"", 0]
+}},
+    ""class_type"": ""KSampler""
+  }},
+""4"": {{
+  ""inputs"": {{
+      ""ckpt_name"": ""sd_xl_turbo_1.0_fp16.safetensors""
+    }},
+    ""class_type"": ""CheckpointLoaderSimple""
+}},
+  ""8"": {{
+  ""inputs"": {{
+      ""samples"": [""3"", 0],
+  ""vae"": [""4"", 2]
+    }},
+    ""class_type"": ""VAEDecode""
+  }},
+  ""9"": {{
+    ""inputs"": {{
+ ""filename_prefix"": ""ComfyUI"",
+ ""images"": [""8"", 0]
+    }},
+    ""class_type"": ""SaveImage""
+  }},
+  ""16"": {{
+  ""inputs"": {{
+      ""text"": ""{positivePrompt}"",
+  ""clip"": [""4"", 1]
+    }},
+    ""class_type"": ""CLIPTextEncode""
+  }},
+  ""40"": {{
+    ""inputs"": {{
+      ""text"": ""{negativePrompt}"",
+   ""clip"": [""4"", 1]
+    }},
+    ""class_type"": ""CLIPTextEncode""
+  }},
+  ""53"": {{
+    ""inputs"": {{
+      ""width"": {width},
+    ""height"": {height},
+   ""batch_size"": 1
+    }},
+    ""class_type"": ""EmptySD3LatentImage""
+  }}
+}}";
+        }
+    }
+
+    public class DreamshaperWorkflow
+    {
+   public static string CreateWorkflow(string positivePrompt, string negativePrompt = "",
+     int width = 1024, int height = 1024, int steps = 20, double cfg = 6.0, double denoise = 1.0, 
+         long? seed = null, string samplerName = "euler", string scheduler = "simple")
+     {
+        if (!seed.HasValue)
+seed = new Random().Next();
+
+   positivePrompt = positivePrompt.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+     negativePrompt = negativePrompt.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+
+   return $@"{{
+  ""3"": {{
+    ""inputs"": {{
+  ""seed"": {seed},
+      ""steps"": {steps},
+ ""cfg"": {cfg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)},
+    ""sampler_name"": ""{samplerName}"",
+ ""scheduler"": ""{scheduler}"",
+      ""denoise"": {denoise.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)},
+      ""model"": [""4"", 0],
+""positive"": [""16"", 0],
+      ""negative"": [""40"", 0],
+      ""latent_image"": [""53"", 0]
+    }},
+    ""class_type"": ""KSampler""
+  }},
+  ""4"": {{
+    ""inputs"": {{
+      ""ckpt_name"": ""dreamshaper_8.safetensors""
+    }},
+    ""class_type"": ""CheckpointLoaderSimple""
+  }},
+  ""8"": {{
+    ""inputs"": {{
+      ""samples"": [""3"", 0],
+   ""vae"": [""4"", 2]
+    }},
+  ""class_type"": ""VAEDecode""
+  }},
+  ""9"": {{
+    ""inputs"": {{
+      ""filename_prefix"": ""ComfyUI"",
+      ""images"": [""8"", 0]
+    }},
+    ""class_type"": ""SaveImage""
+  }},
+  ""16"": {{
+    ""inputs"": {{
+    ""text"": ""{positivePrompt}"",
+  ""clip"": [""4"", 1]
+    }},
+    ""class_type"": ""CLIPTextEncode""
+  }},
+  ""40"": {{
+    ""inputs"": {{
+      ""text"": ""{negativePrompt}"",
+   ""clip"": [""4"", 1]
+ }},
+""class_type"": ""CLIPTextEncode""
+  }},
+  ""53"": {{
+    ""inputs"": {{
+      ""width"": {width},
+      ""height"": {height},
+      ""batch_size"": 1
+    }},
+    ""class_type"": ""EmptySD3LatentImage""
+  }}
+}}";
+ }
+    }
+
+    public class Image2ImageWorkflow
+    {
+        public static string CreateWorkflow(string positivePrompt, string negativePrompt = "",
+    string inputImageFilename = "", int resizeWidth = 512, int resizeHeight = 512,
+int steps = 20, double cfg = 6.0, double denoise = 1.0, long? seed = null,
+        string samplerName = "euler", string scheduler = "simple")
+     {
+    if (!seed.HasValue)
+    seed = new Random().Next();
+
+   positivePrompt = positivePrompt.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+     negativePrompt = negativePrompt.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+ inputImageFilename = inputImageFilename.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    return $@"{{
+  ""3"": {{
+    ""inputs"": {{
+ ""seed"": {seed},
+      ""steps"": {steps},
+    ""cfg"": {cfg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)},
+      ""sampler_name"": ""{samplerName}"",
+    ""scheduler"": ""{scheduler}"",
+  ""denoise"": {denoise.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)},
+""model"": [""4"", 0],
+   ""positive"": [""16"", 0],
+      ""negative"": [""40"", 0],
+      ""latent_image"": [""59"", 0]
+    }},
+  ""class_type"": ""KSampler""
+  }},
+  ""4"": {{
+    ""inputs"": {{
+      ""ckpt_name"": ""dreamshaper_8.safetensors""
+    }},
+  ""class_type"": ""CheckpointLoaderSimple""
+  }},
+  ""8"": {{
+    ""inputs"": {{
+   ""samples"": [""3"", 0],
+      ""vae"": [""4"", 2]
+    }},
+  ""class_type"": ""VAEDecode""
+  }},
+  ""9"": {{
+  ""inputs"": {{
+      ""filename_prefix"": ""ComfyUI"",
+ ""images"": [""8"", 0]
+    }},
+    ""class_type"": ""SaveImage""
+  }},
+  ""16"": {{
+    ""inputs"": {{
+   ""text"": ""{positivePrompt}"",
+      ""clip"": [""4"", 1]
+    }},
+ ""class_type"": ""CLIPTextEncode""
+  }},
+  ""40"": {{
+  ""inputs"": {{
+   ""text"": ""{negativePrompt}"",
+   ""clip"": [""4"", 1]
+    }},
+""class_type"": ""CLIPTextEncode""
+  }},
+  ""53"": {{
+    ""inputs"": {{
+ ""width"": {resizeWidth},
+      ""height"": {resizeHeight},
+""batch_size"": 1
+    }},
+    ""class_type"": ""EmptySD3LatentImage""
+  }},
+  ""55"": {{
+    ""inputs"": {{
+      ""image"": ""{inputImageFilename}""
+    }},
+    ""class_type"": ""LoadImage""
+  }},
+  ""56"": {{
+    ""inputs"": {{
+  ""pixels"": [""57"", 0],
+""vae"": [""4"", 2]
+    }},
+    ""class_type"": ""VAEEncode""
+  }},
+  ""57"": {{
+    ""inputs"": {{
+   ""width"": {resizeWidth},
+   ""height"": {resizeHeight},
+      ""interpolation"": ""nearest"",
+      ""method"": ""stretch"",
+      ""condition"": ""always"",
+      ""multiple_of"": 0,
+      ""image"": [""55"", 0]
+ }}
+    ""class_type"": ""ImageResize+""
+  }},
+  ""58"": {{
+    ""inputs"": {{
+ ""mask"": [""55"", 1]
+    }},
+    ""class_type"": ""InvertMask""
+  }},
+  ""59"": {{
+ ""inputs"": {{
+    ""grow_mask_by"": 0,
+   ""pixels"": [""57"", 0],
+   ""vae"": [""4"", 2],
+""mask"": [""58"", 0]
+    }},
+    ""class_type"": ""VAEEncodeForInpaint""
+  }}
+}}";
+  }
+    }
+}

@@ -1,0 +1,693 @@
+# Meesa Multis Maker
+
+<p align="center">
+  <strong>The ultimate tool for creating Ultima Online multi structures and GUMP graphics with AI-powered texture regeneration</strong>
+</p>
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Boat_1.png" alt="Meesa Multis Maker Main Application" width="800">
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> �
+  <a href="https://discord.gg/MpBe7cJDqV">Discord</a>  �
+  <a href="#installation">Installation</a> �
+  <a href="#getting-started">Getting Started</a> �
+  <a href="#main-editors">Editors</a> �
+  <a href="#ai-integration">AI Integration</a> �
+  <a href="#keyboard-shortcuts">Shortcuts</a> �
+  <a href="#license">License</a>
+</p>
+
+---
+
+## Overview
+
+**Meesa Multis Maker** is a Windows desktop application for composing, editing, exporting, and AI-regenerating isometric game assets used in Ultima Online-style multis and GUMPs. It provides a powerful canvas for placing item art on an isometric diamond grid with support for complex transforms and integrates AI pipelines for texture and static regeneration.
+
+### System Requirements
+
+- **OS:** Windows 7 or later
+- **.NET Framework:** 4.8.1 or later
+- **Ultima Online Client:** Required for MUL/UOP asset files
+- **GPU (Optional):** NVIDIA GPU recommended for local model inference (LLM, vision, audio gates) and local ComfyUI
+- **ComfyUI Server (Optional):** For server-based AI image generation
+
+---
+
+## Features
+
+### Isometric Canvas Editor (Main Form)
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Walls_1.png" alt="Main Canvas Editor" width="700">
+</p>
+
+- **Diamond grid system** - Standard 44x44 pixel Ultima Online tile format
+- **Multi-object selection** - Ctrl+Click for multi-select, marquee selection with Ctrl+Drag
+- **Z-ordering and layering** - Full control over object depth and draw order
+- **Pan & Zoom** - Middle-click pan, Ctrl+Scroll to zoom (0.2x to 4x)
+- **Snap-to-grid** - Objects automatically align to isometric grid positions
+- **Z-level filtering** - Filter visible objects by Z height range
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Walls_2.png" alt="Building Walls" width="400">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Walls_3.png" alt="Complex Structures" width="400">
+</p>
+
+### Transform Tools
+- **Scale** - Resize objects (0.1x to 10x) with +/- keys
+- **Rotate** - Free rotation with R key, 15 degree or 90 degree snap with Shift/Ctrl
+- **Flip** - Horizontal (F) and Vertical (Shift+F) flipping
+- **Skew/Distort** - Corner-based perspective transform (K key)
+- **Pixel Offset** - Fine-tune positioning with Alt+Arrow keys
+
+### Slice Tool
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MainApp_SliceTool_1.png" alt="Slice Tool" width="400">
+  <img src="docs/images/MeesaMultisMaker_MainApp_SliceTool_2.png" alt="Slice Tool Result" width="400">
+</p>
+
+Create vertical slices of placed images based on selected diamond tiles - perfect for creating building pieces that align perfectly with the isometric grid.
+
+### Lock System
+- Lock objects to prevent accidental editing
+- Separate locked/unlocked object lists
+- Multi-select lock/unlock operations
+
+### AI Integration (ComfyUI)
+
+All image generation runs through a **ComfyUI server** (local or remote):
+
+- **More model options** - Use any Stable Diffusion checkpoint, including Flux.2 Klein (`flux-2-klein-9b.safetensors` + `flux2` CLIP + `flux2-vae`), which gets dedicated inpaint workflows when selected
+- **Advanced workflows** - Inpainting, ControlNet, and more
+- **Remote processing** - Can run on a separate machine or cloud
+
+**AI Features:**
+- **Image-to-Image** - Transform existing sprites with AI
+- **Inpainting** - Selective region regeneration with masks
+- **Text-to-Image** - Generate new assets from text prompts
+- **Batch Processing** - Regenerate multiple selected objects at once
+- **Old/New Toggle** - Compare AI-generated results with originals
+- **Drop Black Pixels** - Automatic background removal (adjustable post-generation)
+
+### Import/Export
+- **Canvas Export** - Save entire canvas as PNG
+- **Multi Text Import/Export** - Load/save Ultima Online multi format files
+- **Parts Export** - Export individual components for AI processing
+- **MUL File Export** - Save directly to Ultima Online asset files
+
+### Settings
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Settings.png" alt="Settings Panel" width="500">
+</p>
+
+---
+
+## Main Editors
+
+### Painter Form
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_Painter_1.png" alt="Painter Form" width="700">
+</p>
+
+A full-featured layer-based pixel art editor for creating custom sprites.
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_Painter_2.png" alt="Painter Layers" width="350">
+  <img src="docs/images/MeesaMultisMaker_Painter_3.png" alt="Painter Drawing" width="350">
+</p>
+
+**Features:**
+- **Multiple canvas sizes** - 512x512, 768x768, 1024x1024, 1536x1536
+- **Layer system** - Add, delete, reorder, rename, lock, and adjust opacity
+- **Drawing tools:**
+  - Brush (soft round with anti-aliasing)
+  - Pencil (hard pixel-perfect)
+  - Eraser
+  - Flood fill
+  - Line tool
+  - Rectangle tool
+  - Circle/ellipse tool
+- **Fill shapes** - Toggle between outline and filled shapes
+- **Mask mode** - Paint masks for AI inpainting
+- **Zoom** - Ctrl+Scroll or Ctrl+/Ctrl- to zoom
+- **Undo** - Per-layer undo history (Ctrl+Z)
+- **Clipboard** - Paste images directly (Ctrl+V)
+- **Image effects panel** - Brightness, contrast, hue, saturation, pixelize, noise, dither
+- **Send to Canvas** - Export merged image to main form
+- **Send to GUMP Editor** - Export to GUMP Editor
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_Painter_4.png" alt="Painter Effects" width="350">
+  <img src="docs/images/MeesaMultisMaker_Painter_5.png" alt="Painter AI" width="350">
+</p>
+
+### GUMP Editor
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_GumpEditor_1.png" alt="GUMP Editor" width="700">
+</p>
+
+Specialized editor for Ultima Online UI graphics (GUMPs).
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_GumpEditor_2.png" alt="GUMP Editor Palette" width="500">
+</p>
+
+**Features:**
+- **GUMP palette browser** - Search and filter available GUMPs
+- **Drag-and-drop placement** - Add GUMPs to canvas
+- **Multi-selection** - Select and transform multiple GUMPs
+- **Transform tools:**
+  - Scale (resize with handles or S+/S- buttons)
+  - Rotate (15� increments or free rotation)
+  - Flip Horizontal / Flip Vertical
+  - Skew (adjustable X/Y skew with live preview)
+  - Slice (divide gumps into grid pieces)
+- **Layer management** - Organize GUMPs in layers
+- **AI regeneration (ComfyUI):**
+  - Single GUMP regeneration
+  - Multi-GUMP combined regeneration (processes as one image, splits result)
+  - Alpha mask preservation
+  - **Post-generation black pixel adjustment** - Toggle and adjust threshold after AI generation
+  - Old/New comparison toggle
+  - Revert to original
+- **Custom image import** - Add PNG images as GUMPs
+- **Canvas export** - Save compositions as PNG
+
+### MUL Viewer
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MultiViewer_1.png" alt="MUL Viewer" width="700">
+</p>
+
+Browser for viewing and generating multi structures from MUL files.
+
+**Features:**
+- **Multi entry browser** - List all multis with dimensions
+- **Parts view** - See individual components with TileID, X, Y, Z, Flags
+- **Preview rendering** - Isometric preview with pan and zoom
+- **Hide empty entries** - Filter out empty multi slots
+- **Normalize coordinates** - Center multi at origin
+- **Export text format** - Copy multi definition to clipboard
+- **Send to Canvas** - Import selected multi to main editor
+- **Add to Canvas** - Append multi to existing objects
+
+**Structure Generation (AI-like):**
+- Select one or more multis as training data
+- Configure output dimensions (width x height)
+- Adjust generation parameters:
+  - Kernel size
+  - Epochs
+  - Learning rate
+  - Similarity factor
+- Choose algorithm:
+  - Neural network (SimpleCnn)
+  - Wave Function Collapse (WFC)
+- Generate new structures based on learned patterns
+
+### Audio Editor
+
+ComfyUI-powered sound design: text-to-SFX, text-to-music, voice cloning / voice design (Qwen TTS), a webcam-driven ambient **Watcher** that scores the scene with generative foley + music layers, and UO `sound.mul` / music-folder integration.
+
+- **SFX / Music / Voice tabs** - prompt, negative prompt, duration, seed, steps, per-kind workflows
+- **Watcher tab** - sense cadence, per-layer clip lengths, scene-change gating (frame + prompt similarity), crossfaded layer swaps, DJ timeline of everything aired
+- **Quality gates** (optional, needs the Python setup above) - vocal bouncer, CLAP prompt-match floor, loudness matching, auto audio captions stored in the library
+- **Library tab** - every generation logged with prompt/seed/workflow/file, content-searchable once captioned
+
+### Image Editor
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_ImageEditor_1.png" alt="Image Editor" width="500">
+</p>
+
+Quick image effects editor for adjusting brightness, contrast, and applying filters to selected objects.
+
+### Map Viewer
+World map browser with tile/static editing and AI replacement.
+
+**Features:**
+- **Facet selection** - Browse Felucca, Trammel, Ilshenar, Malas, Tokuno, Ter Mur
+- **Pan and zoom** - Navigate large maps efficiently
+- **Minimap generation** - Overview of entire map
+- **Coordinate navigation** - Jump to specific X,Y location
+- **Selection modes:**
+  - Land tiles
+  - Statics
+  - Lasso selection for irregular areas
+- **Z-level filtering** - Show statics within Z range
+- **Static manipulation:**
+  - Move with numpad keys (X, Y, Z)
+  - PageUp/PageDown for Z adjustment
+- **AI tile replacement (ComfyUI):**
+  - Replace mode - Simple regeneration
+  - Context mode - Context-aware inpainting
+  - Batch processing of selected tiles
+- **Show statics toggle** - View map with or without statics
+- **TileData display** - View item properties
+
+#### Export Map
+
+Export the currently loaded map as a high-resolution isometric image or a set of tiled JPEG files with an interactive HTML viewer.
+
+**Export Options:**
+- **Zoom (px/tile)** - Output resolution from 1 (tiny overview) to 44 (full detail per tile)
+- **Include Static Objects** - Render statics on top of land tiles with hue, translucency, and partial-hue support
+- **Export HTML & Minimap Only** - Regenerate the viewer, minimap, and globe texture without re-rendering tiles (useful for quick iteration)
+- **Generate Mipmap Only** - Rebuild the mipmap pyramid from existing tiles without re-rendering
+- **Region selection** - Export the entire map or a custom rectangular region (Start X/Y, End X/Y)
+
+**Output Modes:**
+
+| Image Size | Output |
+|------------|--------|
+| ? 100 MP | Single PNG, JPEG, or BMP file |
+| > 100 MP | Folder of 512�512 JPEG tiles with HTML viewer |
+
+**Tiled Export Contents:**
+- `tile_R_C.jpg` - Full-resolution rendered tiles (row R, column C)
+- `viewer.html` - Interactive pan/zoom map viewer (open in any browser)
+- `minimap.jpg` - Isometric radar-color overview for quick navigation
+- `globe_texture.png` - Composited image from the coarsest mipmap level, suitable for projecting onto a 3D globe
+- `L1/`, `L2/`, � `LN/` - Mipmap tile pyramids for efficient zoomed-out viewing
+
+**HTML Viewer Features:**
+- Drag to pan, mouse-wheel to zoom
+- Clickable minimap for quick navigation
+- Automatic mipmap level switching when zoomed out
+- Only visible tiles are loaded into the DOM for memory efficiency
+- Zoom buttons: +, ?, 1:1, Fit
+
+**Rendering Details:**
+- Tiles are rendered using textured isometric projection with deformed terrain (Z-height per corner)
+- NoDraw land tiles and statics are automatically filtered out
+- Statics are drawn with correct depth sorting (painter's algorithm), hue coloring, translucency, and foliage layering
+- Tiles are rendered in parallel across all CPU cores for maximum speed
+- Art assets are pre-loaded and serialized to byte arrays so parallel threads never contend on shared GDI+ objects
+
+---
+
+## Screenshots Gallery
+
+<p align="center">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Boat_2.png" alt="Boat Building 1" width="400">
+  <img src="docs/images/MeesaMultisMaker_MainApp_Boat_3.png" alt="Boat Building 2" width="400">
+</p>
+
+---
+
+## Installation
+
+### Download
+1. Download the latest release from the [Releases page](https://github.com/MeesaJarJar/MeesaMultisMaker/releases)
+2. Extract the ZIP file to a folder of your choice
+3. Run `MeesaMultisMaker.exe`
+
+### First Launch
+1. Accept the license agreement
+2. Browse to your Ultima Online installation folder when prompted
+   - The application will search common paths automatically:
+     - `C:\Program Files (x86)\Electronic Arts\Ultima Online Classic`
+     - `C:\Program Files (x86)\UOForever\UO`
+     - And other common locations
+
+### Supported Asset Formats
+- **MUL Files** - Standard OSI format (`art.mul` + `artidx.mul`)
+- **UOP Files** - Enhanced format (`artLegacyMUL.uop`)
+- **PNG Art Folders** - UOFItems-style PNG directories
+
+---
+
+## Getting Started
+
+### Basic Workflow
+
+1. **Load Assets** - Click "MUL Folder..." to select your Ultima Online installation
+2. **Browse Palette** - Use the left panel to search and browse available art
+3. **Place Objects** - Drag items from the palette onto the canvas
+4. **Transform** - Select objects and use transform tools to position them
+5. **Export** - Save your creation using the Export button
+
+### Creating a Multi Structure
+
+1. Set grid size using Width/Height controls (e.g., 10x10)
+2. Click "Create Grid" to initialize the canvas
+3. Drag foundation pieces from the palette
+4. Add walls, set appropriate Z levels with Z+/Z- buttons
+5. Layer decorations using L+/L- for draw order
+6. Export as Multi Text for use in-game
+
+---
+
+## AI Integration
+
+All image generation runs through a **ComfyUI server** (local or remote).
+Selecting a `flux-2-klein` checkpoint switches inpaint workflows to the
+dedicated Flux.2 Klein graph (Flux UNET + `flux2` CLIP + Flux2 VAE).
+
+### ComfyUI (Server-based)
+
+ComfyUI provides more flexibility with model selection and advanced workflows.
+
+**Advantages:**
+- ? Wide variety of checkpoint models
+- ? Advanced features (ControlNet, inpainting, etc.)
+- ? Can run on a remote server
+- ? More control over generation parameters
+
+**Requirements:**
+- Running ComfyUI server (local or remote)
+- Stable Diffusion checkpoint models
+
+#### Setting Up ComfyUI
+
+##### Option 1: Google Colab (Free, No GPU Required!)
+
+ComfyUI can run in Google Colab notebooks for free using their T4 free GPUs.
+
+**Step 1.** Go to https://colab.research.google.com/
+
+**Step 2.** Click "New notebook" button.
+
+**Step 3.** Paste this script into the notebook cell:
+
+```python
+!git clone https://github.com/comfyanonymous/ComfyUI.git
+!pip install -r /content/ComfyUI/requirements.txt
+!pip install pinggy
+!mkdir -p models/checkpoints
+!wget -O models/checkpoints/sd_xl_base_1.0.safetensors \
+https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true
+
+!wget -O /content/ComfyUI/models/checkpoints/dreamshaper_8.safetensors \
+https://huggingface.co/jzli/DreamShaper-8/resolve/main/dreamshaper_8.safetensors
+
+import pinggy
+
+tunnel = pinggy.start_tunnel(forwardto="localhost:8188")
+
+print("Public URL(s):")
+for url in tunnel.urls:
+    print(url)
+
+!cd /content/ComfyUI && python main.py --listen 0.0.0.0
+```
+
+**Step 4.** Click the Play button to run the script.
+
+**Step 5.** Copy the pinggy URL and paste it into the ComfyUI URL field. **Add `:80` to the end.**
+
+Example: `http://eyzzg-33-125-104-65.a.free.pinggy.link:80`
+
+##### Option 2: Run Your Own ComfyUI Server (Local)
+
+1. **Install ComfyUI**
+   ```bash
+   git clone https://github.com/comfyanonymous/ComfyUI
+   cd ComfyUI
+   pip install -r requirements.txt
+   ```
+
+2. **Download Required Models**
+   Place these in your ComfyUI `models/checkpoints` folder:
+   - **DreamShaper 8** - `dreamshaper_8.safetensors`
+   - **SD 1.5** - `v1-5-pruned-emaonly.ckpt`
+
+3. **Start ComfyUI**
+   ```bash
+   python main.py --listen 0.0.0.0 --port 8080
+   ```
+
+4. **Configure in Meesa Multis Maker**
+   - Select "ComfyUI (Server)" from AI Backend dropdown
+   - Set ComfyUI URL to `http://localhost:8080`
+
+### AI Settings Panel Options
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| AI Backend | ComfyUI (Server) | ComfyUI |
+| Prompt | Positive prompt for generation | (varies) |
+| Negative Prompt | Elements to avoid | "blurry, low quality..." |
+| Steps | Denoising steps | 20 |
+| CFG Scale | Prompt adherence | 4.0 |
+| Denoise | Transformation strength | 0.55 |
+| Sampler | Sampling method | euler |
+| Scheduler | Noise schedule | normal |
+| Resolution | Output size | 512x512 |
+| Drop Black Pixels | Remove dark backgrounds | Enabled |
+| Black Threshold | Darkness cutoff for removal | 15 |
+
+### Recommended Generation Settings
+
+| Use Case | Steps | CFG | Denoise | Sampler |
+|----------|-------|-----|---------|---------|
+| Quick Preview | 15 | 4 | 0.4 | euler |
+| Standard Quality | 20 | 4 | 0.55 | euler |
+| High Quality | 30 | 5 | 0.6 | dpmpp_2m |
+| Subtle Changes | 15 | 4 | 0.3 | euler |
+
+### Prompting Tips
+
+**Good prompts for UO-style assets:**
+- "isometric game tile, pixel art style, [object description], clean background"
+- "3d model isometric view, [object], black background, studio lighting"
+- "ultima online style, medieval fantasy, [object]"
+
+**Negative prompt suggestions:**
+- "blurry, low quality, distorted, text, watermark, signature"
+- "modern, sci-fi, photo-realistic" (if you want stylized results)
+
+---
+
+## Keyboard Shortcuts
+
+### Canvas Navigation
+| Key | Action |
+|-----|--------|
+| Middle Mouse | Pan canvas |
+| Ctrl + Scroll | Zoom in/out |
+| Escape | Exit current mode (Slice/Skew/Rotate) |
+
+### Selection
+| Key | Action |
+|-----|--------|
+| Click | Select single object |
+| Ctrl + Click | Add/remove from selection |
+| Ctrl + Drag | Marquee select |
+| Alt + Drag | Marquee deselect |
+
+### Object Manipulation
+| Key | Action |
+|-----|--------|
+| Delete | Delete selected objects |
+| Numpad 1-9 | Move in grid directions |
+| Alt + Arrows | Pixel offset (fine movement) |
+| Alt + Shift + Arrows | Fast pixel offset |
+
+### Transforms
+| Key | Action |
+|-----|--------|
+| + / - | Scale up/down |
+| Shift + +/- | Scale faster |
+| R | Toggle rotate mode |
+| Shift + R | Rotate 15 degrees |
+| Ctrl + R | Rotate -90 degrees |
+| F | Flip horizontal |
+| Shift + F | Flip vertical |
+| K | Toggle skew mode |
+| Shift + K | Reset skew |
+| Ctrl + T | Reset all transforms |
+
+### Editing
+| Key | Action |
+|-----|--------|
+| Ctrl + C | Copy selection |
+| Ctrl + V | Paste at cursor |
+| Ctrl + Z | Undo |
+| Ctrl + Y | Redo |
+| H | Hide selected objects |
+| Shift + H | Show all hidden objects |
+
+### Map Viewer (Statics Selected)
+| Key | Action |
+|-----|--------|
+| Numpad 8 | Move X-1, Y-1 |
+| Numpad 2 | Move X+1, Y+1 |
+| Numpad 4 | Move X-1, Y+1 |
+| Numpad 6 | Move X+1, Y-1 |
+| Numpad 7 | Move X-1 |
+| Numpad 9 | Move Y-1 |
+| Numpad 1 | Move Y+1 |
+| Numpad 3 | Move X+1 |
+| Page Up / + | Move Z+1 |
+| Page Down / - | Move Z-1 |
+| Escape | Cancel lasso selection |
+
+### Painter
+| Key | Action |
+|-----|--------|
+| Ctrl + Z | Undo (per-layer) |
+| Ctrl + V | Paste image as layer |
+| Ctrl + N | Add new layer |
+| Ctrl + +/- | Zoom in/out |
+| Ctrl + 0 | Reset zoom |
+
+### GUMP Editor
+| Key | Action |
+|-----|--------|
+| Delete | Delete selected gump(s) |
+| Ctrl + Z | Undo |
+| Ctrl + Y | Redo |
+| Ctrl + S | Export canvas |
+
+---
+
+## Configuration
+
+Settings are stored in:
+```
+%APPDATA%\MeesaMultisMaker\config.xml
+```
+
+### Configurable Options
+- MUL folder path
+- PNG art folder path
+- ComfyUI server URL
+- ComfyUI server URL
+- Default AI generation parameters (prompt, steps, CFG, denoise, sampler, scheduler, resolution)
+- Update check preferences
+- Window position preferences
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**"Parameter is not valid" error on images**
+- This can occur if image data becomes corrupted. Try reloading the application.
+- Ensure your MUL files are not corrupted.
+
+**ComfyUI connection fails**
+- Verify ComfyUI is running and accessible
+- Check firewall settings
+- Ensure the URL includes the port (e.g., `http://localhost:8080`)
+- For Google Colab, make sure to add `:80` to the pinggy URL
+- Test with "Test Connection" button
+
+**Missing art/textures**
+- Verify the MUL folder path in settings
+- Check that `art.mul` and `artidx.mul` exist (or `artLegacyMUL.uop` for UOP format)
+
+**AI generation produces black images**
+- Enable "Drop Black Pixels" option
+- Adjust the "Black Threshold" slider after generation
+- For ComfyUI: Ensure checkpoint models are installed
+
+**AI output is wrong size (too large/small)**
+- The AI automatically resizes output to match the original image dimensions
+- If using scaled gumps, the output will match the source image size, not the displayed size
+
+**Multi generation produces empty results**
+- Select at least one multi entry as training data
+- Ensure selected multis have components
+- Try adjusting kernel size and epochs
+
+**Google Colab session disconnects**
+- Free Colab sessions have time limits and will disconnect after inactivity
+- Simply re-run the script to start a new session
+- You'll get a new pinggy URL each time
+
+### Getting Help
+
+- **GitHub Issues:** [Report bugs or request features](https://github.com/MeesaJarJar/MeesaMultisMaker/issues)
+- **Discord:** [Join our community server](https://discord.gg/MpBe7cJDqV) for support and sharing creations
+
+---
+
+## File Formats
+
+### Multi Text Format
+Tab-separated values with columns:
+```
+TileID  X   Y   Z   Flags
+0x0001  0   0   0   1
+0x0002  1   0   0   1
+```
+
+### Supported Image Formats
+- PNG (recommended for transparency)
+- BMP
+- JPG/JPEG
+- GIF
+
+### MUL Files Used
+- `art.mul` / `artidx.mul` - Item and land art
+- `artLegacyMUL.uop` - UOP format art
+- `gumpart.mul` / `gumpidx.mul` - UI graphics
+- `gumpartLegacyMUL.uop` - UOP format gumps
+- `map*.mul` - World map data
+- `statics*.mul` / `staidx*.mul` - Static objects
+- `multi.mul` / `multi.idx` - Multi structures
+- `tiledata.mul` - Item properties
+
+---
+
+## Credits
+
+- **Developer:** MeesaJarJar
+- **ComfyUI:** [comfyanonymous](https://github.com/comfyanonymous/ComfyUI)
+- **Stable Diffusion:** [Stability AI](https://stability.ai/)
+- **DreamShaper:** [Lykon](https://civitai.com/user/Lykon)
+
+---
+
+## Building from Source
+
+Requirements: Windows, [.NET SDK](https://dotnet.microsoft.com/download) (builds the .NET Framework 4.8.1 target), and NuGet restore (automatic).
+
+```bash
+git clone https://github.com/MeesaJarJar/MeesaMultisMaker.git
+cd MeesaMultisMaker
+dotnet build MeesaMultisMaker/MeesaMultisMaker.csproj -c Release
+```
+
+The binary lands in `MeesaMultisMaker/bin/Release/MeesaMultisMaker.exe`. No game files ship with the repo: point the app at your own Ultima Online installation on first launch.
+
+Feature dependencies (all optional, all downloaded on first use except where noted):
+- **AI image generation** - needs a running ComfyUI server (local or remote); checkpoints (including Flux.2 Klein) live in the server's `models/` folders.
+- **LLM + vision models** - GGUF weights auto-download on first use.
+- **llama.cpp server** - `llama-server.exe` is NOT in the repo: download a Windows release from [llama.cpp](https://github.com/ggerganov/llama.cpp/releases) and place it (with its `ggml-*.dll` files, already in `MeesaMultisMaker/LLM/bin/`) next to them.
+- **Audio quality gates** (vocal bouncer, CLAP match, captions) - need Python 3.12, `ffmpeg`, and `pip install faster-whisper laion-clap transformers librosa torch torchvision`; without them generation still works, gates report unavailable.
+- **Push to MeesaJarJar** - currently disabled in code (`AppConfig.JarJarPushEnabled = false`); the buttons render grayed-out. Flip the flag to restore it against your own server.
+
+---
+
+## License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for full terms.
+
+---
+
+## Contributing
+
+Pull requests are welcome:
+- Bug reports via GitHub Issues
+- Feature requests and suggestions
+- Community tutorials and guides
+- Sharing your creations!
+
+---
+
+<p align="center">
+  <strong>Made with love for the Ultima Online community</strong>
+</p>
+
+<p align="center">
+  Copyright 2024-2026 MeesaJarJar. All rights reserved.
+</p>

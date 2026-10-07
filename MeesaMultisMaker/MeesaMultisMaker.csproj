@@ -1,0 +1,459 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{1D2BC5F0-7063-4FC9-8A48-BF147064EE71}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>MeesaMultisMaker</RootNamespace>
+    <AssemblyName>MeesaMultisMaker</AssemblyName>
+    <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishUrl>C:\Public\</PublishUrl>
+    <Install>false</Install>
+    <InstallFrom>Web</InstallFrom>
+    <UpdateEnabled>true</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <InstallUrl>http://github.com/meesajarjar/meesamultismaker/</InstallUrl>
+    <CreateWebPageOnPublish>true</CreateWebPageOnPublish>
+    <WebPage>publish.htm</WebPage>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <IsWebBootstrapper>true</IsWebBootstrapper>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <PublishWizardCompleted>true</PublishWizardCompleted>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ManifestCertificateThumbprint>339BB18C530BA2756B96711CB4611AFC32B50CD5</ManifestCertificateThumbprint>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ManifestKeyFile>MeesaMultisMaker_TemporaryKey.pfx</ManifestKeyFile>
+  </PropertyGroup>
+  <PropertyGroup>
+    <GenerateManifests>true</GenerateManifests>
+  </PropertyGroup>
+  <PropertyGroup>
+    <SignManifests>false</SignManifests>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="SkiaSharp">
+      <HintPath>..\packages\SkiaSharp.2.88.7\lib\net462\SkiaSharp.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="AssimpNet">
+      <HintPath>..\packages\AssimpNet.4.1.0\lib\net40\AssimpNet.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\packages\AssimpNet.4.1.0\runtimes\win-x86\native\assimp.dll">
+      <Link>assimp.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\packages\SkiaSharp.NativeAssets.Win32.2.88.7\runtimes\win-x64\native\libSkiaSharp.dll">
+      <Link>runtimes\win-x64\native\libSkiaSharp.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\packages\SkiaSharp.NativeAssets.Win32.2.88.7\runtimes\win-x86\native\libSkiaSharp.dll">
+      <Link>runtimes\win-x86\native\libSkiaSharp.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="AI\ComfyUIGenerator.cs" />
+    <Compile Include="AI\IImageGenerator.cs" />
+    <Compile Include="AI\ImageGeneratorFactory.cs" />
+    <Compile Include="AnimationEditorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Biome\BiomeBrush.cs" />
+    <Compile Include="Biome\BiomeBrushManager.cs" />
+    <Compile Include="Biome\BiomeGenerator.cs" />
+    <Compile Include="ComfyUI\ComfyUIClient.cs" />
+    <Compile Include="ComfyUI\Flux2KleinInpaintBatchWorkflow.cs" />
+    <Compile Include="ComfyUI\Flux2KleinInpaintWorkflow.cs" />
+    <Compile Include="Controls\HoloScrollPanel.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Diagnostics\GumpDebug.cs" />
+    <Compile Include="Dialogs\SpriteSheetSplitterDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.ArtLoading.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Canvas.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Designer.cs" />
+    <Compile Include="Form1.Fields.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Generation.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.ImportExport.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Locking.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Palette.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Search.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.UndoRedoAndKeys.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.Utils.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.ZOrderAndDelete.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GenerationOptionsDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Generation\MultiRules.cs" />
+    <Compile Include="Generation\MultiValidator.cs" />
+    <Compile Include="Generation\PatternAnalyzer.cs" />
+    <Compile Include="Generation\PatternLibrary.cs" />
+    <Compile Include="Generation\Point3D.cs" />
+    <Compile Include="Generation\StructureGenerator.cs" />
+    <Compile Include="Generation\TileInstance.cs" />
+    <Compile Include="GumpEditorForm.AI.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.Canvas.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.Fields.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.Layers.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.Palette.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.Transform.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GumpEditorForm.UI.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Helpers\AIGenerationHelper.cs" />
+    <Compile Include="ImageGeneratorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ThreeDEditorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ThreeDEditorForm.Edit.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ThreeDEditorForm.Llm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ThreeDEditorForm.Cage.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ThreeDEditorForm.Retexture.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ThreeDEditorForm.Slice.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="AudioEditorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Audio\AudioWorkflow.cs" />
+    <Compile Include="Audio\WaveFile.cs" />
+    <Compile Include="Audio\AudioPlayer.cs" />
+    <Compile Include="Audio\AudioConvert.cs" />
+    <Compile Include="Audio\AudioLibrary.cs" />
+    <Compile Include="Audio\AudioPromptLedger.cs" />
+    <Compile Include="Audio\AudioGates.cs" />
+    <Compile Include="Audio\AudioLoudness.cs" />
+    <Compile Include="Audio\SceneGate.cs" />
+    <Content Include="Audio\AudioGateServer.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Compile Include="Audio\CameraCapture.cs" />
+    <Compile Include="Audio\VisionEngine.cs" />
+    <Compile Include="AudioEditorForm.Watcher.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Mul\SoundMul.cs" />
+    <Compile Include="Mul\SoundUopReader.cs" />
+    <Content Include="LLM\bin\llama-server.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Compile Include="LLM\LlamaEngine.cs" />
+    <Content Include="LLM\bin\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Compile Include="ThreeD\PlySplatModel.cs" />
+    <Compile Include="ThreeD\GlbTextureReader.cs" />
+    <Compile Include="ThreeD\Fbx61Model.cs" />
+    <Compile Include="ThreeD\MeshSplatModel.cs" />
+    <Compile Include="ThreeD\SplatRenderer.cs" />
+    <Compile Include="ThreeD\GlSplatRenderer.cs" />
+    <Compile Include="ThreeD\ComfyPreviewSocket.cs" />
+    <Compile Include="ThreeD\MultisMaker1Workflow.cs" />
+    <Compile Include="ThreeD\SplatSelect.cs" />
+    <Compile Include="ThreeD\SplatOps.cs" />
+    <Compile Include="ThreeD\SplatCage.cs" />
+    <Compile Include="ThreeD\SplatTileSlicer.cs" />
+    <Compile Include="JarJar\JarJarClient.cs" />
+    <Compile Include="JarJar\LookupTable.cs" />
+    <Compile Include="MapAction.cs" />
+    <Compile Include="MapGeneration\HeightmapImporter.cs" />
+    <Compile Include="MapGeneration\MapTransitionAnalyzer.cs" />
+    <Compile Include="MapGeneration\PerlinNoise.cs" />
+    <Compile Include="MapGeneration\UOBiomes.cs" />
+    <Compile Include="MapGeneration\WorldGenerator.cs" />
+    <Compile Include="MapViewerForm.Biome.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.Export.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.Heightmap.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.Minimap.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.Rendering.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.StaticPalette.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.WorldGen.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MinimapGenerator.cs" />
+    <Compile Include="Models\ImageInfo.cs" />
+    <Compile Include="Models\PlacedObject.cs" />
+    <Compile Include="MulViewerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MulViewerForm.Fields.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MulViewerForm.Generation.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MulViewerForm.Preview.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MulViewerForm.UI.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Mul\AnimReader.cs" />
+    <Compile Include="Mul\AnimWriter.cs" />
+    <Compile Include="Mul\GumpArtReader.cs" />
+    <Compile Include="Mul\GumpArtWriter.cs" />
+    <Compile Include="Mul\HuesReader.cs" />
+    <Compile Include="Mul\MapReader.cs" />
+    <Compile Include="Mul\MapSaveManager.cs" />
+    <Compile Include="Mul\MapWriter.cs" />
+    <Compile Include="Mul\StaticsWriter.cs" />
+    <Compile Include="Mul\TexMapReader.cs" />
+    <Compile Include="Mul\TileDataReader.cs" />
+    <Compile Include="Mul\TileDataWriter.cs" />
+    <Compile Include="Mul\UopGumpReader.cs" />
+    <Compile Include="Mul\UopGumpWriter.cs" />
+    <Compile Include="UnifyPickerDialog.cs" />
+    <Compile Include="Mul\UopHashEngine.cs" />
+    <Compile Include="PainterForm.Drawing.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PainterForm.Fields.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PainterForm.Layers.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PainterForm.UI.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UndoRedoManager.cs" />
+    <Compile Include="UpdateChecker.cs" />
+    <Compile Include="Utils\ImageEffects.cs" />
+    <Compile Include="Mul\MultiReader.cs" />
+    <Compile Include="AppConfig.cs" />
+    <Compile Include="HolographicTheme.cs" />
+    <Compile Include="Controls\AIGeneratorPanel.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Controls\ImageEditingPanel.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Form1.ImageEditing.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.SaveMul.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ImageEditingForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapDiagnostics.cs" />
+    <Compile Include="MapViewerForm.ArtLoading.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.ComfyUI.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.Designer.cs">
+      <DependentUpon>MapViewerForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="MapViewerForm.Navigation.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.SaveMul.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MapViewerForm.TileSelection.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Mul\LandTileArtReader.cs" />
+    <Compile Include="Mul\StaticArtReader.cs" />
+    <Compile Include="Mul\StaticArtWriter.cs" />
+    <Compile Include="Mul\StaticsReader.cs" />
+    <Compile Include="Mul\UopArtReader.cs" />
+    <Compile Include="Mul\TecmoArtReader.cs" />
+    <Compile Include="Mul\UopArtWriter.cs" />
+    <Compile Include="PainterForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SettingsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Utils\ImageHelper.cs" />
+    <Compile Include="Utils\SpriteSheetSplitter.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
+    </Compile>
+    <None Include="ANIM_FRAME_EXPORT_GUIDE.md" />
+    <None Include="BACKGROUND_REMOVAL_GUIDE.md" />
+    <None Include="CREDITS.md" />
+    <None Include="docs\ANIMATION_EDITOR_GUIDE.md" />
+    <None Include="docs\ANIMATION_EDITOR_IMPLEMENTATION.md" />
+    <None Include="docs\ANIMATION_EDITOR_QUICK_REF.md" />
+    <None Include="docs\ANIMATION_EDITOR_STARTUP_CHECKLIST.md" />
+    <None Include="docs\ANIMATION_EDITOR_TROUBLESHOOTING.md" />
+    <None Include="docs\PROJECT_OVERVIEW.md" />
+    <None Include="DOWNLOAD_TROUBLESHOOTING.md" />
+    <None Include="FINAL_BUILD_STATUS.md" />
+    <None Include="LICENSE" />
+    <None Include="MAP_EXPORT_RESTITCH_GUIDE.md" />
+    <None Include="MeesaMultisMaker_TemporaryKey.pfx" />
+    <None Include="PNG_TRANSPARENCY_EXPORT_FEATURE.md" />
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <None Include="QUICKSTART_ZIMAGE.md" />
+    <None Include="README.md" />
+    <None Include="SD_CLI_DOWNLOAD_REFERENCE.md" />
+    <None Include="SPRITE_SHEET_SPLITTER_GUIDE.md" />
+    <None Include="UnderlayOverlayPHP\gameOverlays.php" />
+    <None Include="UnderlayOverlayPHP\updateOverlay.php" />
+    <None Include="ZIMAGE_INTEGRATION_STATUS.md" />
+    <None Include="Z_IMAGE_TURBO_COMPLETE.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="ComfyUI\WorkflowClasses.txt" />
+    <Content Include="docs\COMFYUI_API_REFERENCE.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include=".NETFramework,Version=v4.7.2">
+      <Visible>False</Visible>
+      <ProductName>Microsoft .NET Framework 4.7.2 %28x86 and x64%29</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

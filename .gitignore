@@ -1,0 +1,41 @@
+# Build outputs
+bin/
+obj/
+out/
+TestResults/
+
+# Visual Studio / VS Code
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/*
+
+# NuGet (restored on build)
+packages/
+*.nupkg
+
+# Model weights (downloaded on first run -- never commit)
+*.gguf
+*.ggml
+*.bin
+LLM/models/
+!LLM/models/.gitkeep
+
+# Local runtime junk
+crash.log
+*.log
+*.orig
+*.bak
+
+# Unreferenced dumps (not source, not reviewed for redistribution)
+MeesaMultisMaker/MeesaServUosa/
+
+# Scratch / test projects (not part of the shipped app)
+TecmoArtTest/
+
+# OS noise
+Desktop.ini
+Thumbs.db
+.DS_Store

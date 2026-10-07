@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Underlay / Overlay Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 16px;
+            background: #1b1b1b;
+            color: #eee;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        input, select, button {
+            font-size: 14px;
+            padding: 6px 8px;
+        }
+
+        button { cursor: pointer; }
+
+        #status {
+            margin: 8px 0 12px;
+            color: #ccc;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px;
+        }
+
+        .card {
+            border: 1px solid #444;
+            border-radius: 8px;
+            background: #232323;
+            padding: 10px;
+        }
+
+        .image-wrap {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 6px;
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .image-wrap img {
+            max-width: 100%;
+            max-height: 100%;
+            image-rendering: pixelated;
+        }
+
+        .meta {
+            font-size: 12px;
+            line-height: 1.4;
+            color: #cfcfcf;
+            word-break: break-all;
+        }
+
+        .muted { color: #999; }
+
+        .tag {
+            display: inline-block;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        .tag-underlay { background: #1f5f96; }
+        .tag-overlay { background: #7a3ea3; }
+
+        .danger {
+            margin-top: 8px;
+            background: #8c2525;
+            color: #fff;
+            border: 1px solid #b14444;
+        }
+    </style>
+</head>
+<body>
+    <h2>Underlay + Overlay Viewer</h2>
+
+    <div class="toolbar">
+        <label for="facet">Facet:</label>
+        <input id="facet" type="number" min="0" step="1" value="0" />
+
+        <label for="mode">Mode:</label>
+        <select id="mode">
+            <option value="both" selected>Both</option>
+            <option value="underlays">Underlays</option>
+            <option value="overlays">Overlays</option>
+        </select>
+
+        <button id="loadBtn">Load</button>
+    </div>
+
+    <div class="toolbar">
+        <label for="auth">Auth Token (for underlay/overlay delete):</label>
+        <input id="auth" type="text" placeholder="optional unless server requires auth" style="width: 420px;" />
+    </div>
+
+    <div id="status" class="muted">Ready.</div>
+    <div id="grid" class="grid"></div>
+
+    <script>
+        (function () {
+            var facetInput = document.getElementById('facet');
+            var modeSelect = document.getElementById('mode');
+            var authInput = document.getElementById('auth');
+            var loadBtn = document.getElementById('loadBtn');
+            var statusEl = document.getElementById('status');
+            var gridEl = document.getElementById('grid');
+
+            function esc(value) {
+                return String(value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function setStatus(text) {
+                statusEl.textContent = text;
+            }
+
+            function apiList(type, facet) {
+                var endpoint = type === 'overlay' ? 'gameOverlays.php' : 'gameUnderlays.php';
+                return fetch(endpoint + '?action=list&facet=' + encodeURIComponent(facet), { method: 'GET' })
+                    .then(function (res) {
+                        return res.json().then(function (data) {
+                            if (!res.ok) {
+                                var msg = (data && (data.message || data.Message)) || 'Request failed.';
+                                throw new Error(msg);
+                            }
+                            return Array.isArray(data) ? data : [];
+                        });
+                    });
+            }
+
+            function makeCard(type, record) {
+                var card = document.createElement('div');
+                card.className = 'card';
+
+                var tagClass = type === 'overlay' ? 'tag tag-overlay' : 'tag tag-underlay';
+                var tagText = type === 'overlay' ? 'Overlay' : 'Underlay';
+                var path = record.image || '';
+                var key = record.facet + ':' + record.left + ':' + record.top + ':' + record.width + ':' + record.height;
+
+                var html = '' +
+                    '<div class="' + tagClass + '">' + esc(tagText) + '</div>' +
+                    '<div class="image-wrap"><img src="' + esc(path) + '" alt="' + esc(tagText) + '" loading="lazy" /></div>' +
+                    '<div class="meta">' +
+                        '<div><strong>Key:</strong> ' + esc(key) + '</div>' +
+                        '<div><strong>Bounds:</strong> L=' + esc(record.left) + ' T=' + esc(record.top) + ' W=' + esc(record.width) + ' H=' + esc(record.height) + '</div>' +
+                        '<div><strong>Updated:</strong> ' + esc(record.updated_at || '') + '</div>' +
+                        '<div><strong>Hash:</strong> ' + esc(record.hash || '') + '</div>' +
+                        '<div><strong>Path:</strong> ' + esc(path) + '</div>' +
+                    '</div>';
+
+                if (type === 'overlay') {
+                    html += '<button class="danger" type="button">Delete Overlay Area</button>';
+                } else {
+                    html += '<button class="danger" type="button">Delete Underlay Area</button>';
+                }
+
+                card.innerHTML = html;
+
+                var btn = card.querySelector('button.danger');
+                btn.addEventListener('click', function () {
+                    if (type === 'overlay') {
+                        deleteOverlay(record);
+                    } else {
+                        deleteUnderlay(record);
+                    }
+                });
+
+                return card;
+            }
+
+            function deleteUnderlay(record) {
+                var token = authInput.value.trim();
+                if (!confirm('Delete underlay area ' + record.facet + ':' + record.left + ':' + record.top + ':' + record.width + ':' + record.height + ' ?')) {
+                    return;
+                }
+
+                setStatus('Deleting underlay...');
+
+                var form = new FormData();
+                form.append('facet', String(record.facet));
+                form.append('left', String(record.left));
+                form.append('top', String(record.top));
+                form.append('width', String(record.width));
+                form.append('height', String(record.height));
+                if (token) {
+                    form.append('auth_token', token);
+                }
+
+                fetch('gameUnderlays.php?action=delete', {
+                    method: 'POST',
+                    body: form
+                })
+                .then(function (res) {
+                    return res.json().then(function (data) {
+                        if (!res.ok) {
+                            var msg = (data && (data.message || data.Message)) || 'Delete failed.';
+                            throw new Error(msg);
+                        }
+                        return data;
+                    });
+                })
+                .then(function () {
+                    setStatus('Underlay deleted. Reloading...');
+                    loadFacet();
+                })
+                .catch(function (err) {
+                    setStatus('Delete error: ' + err.message);
+                });
+            }
+
+            function deleteOverlay(record) {
+                var token = authInput.value.trim();
+                if (!confirm('Delete overlay area ' + record.facet + ':' + record.left + ':' + record.top + ':' + record.width + ':' + record.height + ' ?')) {
+                    return;
+                }
+
+                setStatus('Deleting overlay...');
+
+                var form = new FormData();
+                form.append('facet', String(record.facet));
+                form.append('left', String(record.left));
+                form.append('top', String(record.top));
+                form.append('width', String(record.width));
+                form.append('height', String(record.height));
+                if (token) {
+                    form.append('auth_token', token);
+                }
+
+                fetch('gameOverlays.php?action=delete', {
+                    method: 'POST',
+                    body: form
+                })
+                .then(function (res) {
+                    return res.json().then(function (data) {
+                        if (!res.ok) {
+                            var msg = (data && (data.message || data.Message)) || 'Delete failed.';
+                            throw new Error(msg);
+                        }
+                        return data;
+                    });
+                })
+                .then(function () {
+                    setStatus('Overlay deleted. Reloading...');
+                    loadFacet();
+                })
+                .catch(function (err) {
+                    setStatus('Delete error: ' + err.message);
+                });
+            }
+
+            function renderRecords(mode, underlays, overlays) {
+                gridEl.innerHTML = '';
+                var total = 0;
+
+                if (mode !== 'overlays') {
+                    for (var i = 0; i < underlays.length; i++) {
+                        gridEl.appendChild(makeCard('underlay', underlays[i]));
+                        total++;
+                    }
+                }
+
+                if (mode !== 'underlays') {
+                    for (var j = 0; j < overlays.length; j++) {
+                        gridEl.appendChild(makeCard('overlay', overlays[j]));
+                        total++;
+                    }
+                }
+
+                if (total === 0) {
+                    gridEl.innerHTML = '<div class="muted">No records found for this facet/mode.</div>';
+                }
+
+                return total;
+            }
+
+            function loadFacet() {
+                var facet = parseInt(facetInput.value, 10);
+                var mode = modeSelect.value;
+
+                if (isNaN(facet) || facet < 0) {
+                    setStatus('Invalid facet.');
+                    return;
+                }
+
+                setStatus('Loading...');
+                gridEl.innerHTML = '';
+
+                var wantUnderlays = mode !== 'overlays';
+                var wantOverlays = mode !== 'underlays';
+
+                var underlayPromise = wantUnderlays ? apiList('underlay', facet) : Promise.resolve([]);
+                var overlayPromise = wantOverlays ? apiList('overlay', facet) : Promise.resolve([]);
+
+                Promise.all([underlayPromise, overlayPromise])
+                    .then(function (result) {
+                        var underlays = result[0] || [];
+                        var overlays = result[1] || [];
+                        var total = renderRecords(mode, underlays, overlays);
+                        setStatus('Loaded ' + total + ' record(s) for facet ' + facet + '.');
+                    })
+                    .catch(function (err) {
+                        setStatus('Error: ' + err.message);
+                    });
+            }
+
+            loadBtn.addEventListener('click', loadFacet);
+            facetInput.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    loadFacet();
+                }
+            });
+
+            loadFacet();
+        })();
+    </script>
+</body>
+</html>

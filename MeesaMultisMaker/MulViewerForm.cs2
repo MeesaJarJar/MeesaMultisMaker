@@ -1,0 +1,774 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Windows.Forms;
+using MeesaMultisMaker.Mul;
+
+namespace MeesaMultisMaker
+{
+    public partial class MulViewerForm : Form
+    {
+        public event Action<string> GeneratedTextReady;
+        public event Action<List<List<PlacedObject>>> TrainingDataReady;
+
+        private ListBox multiListBox;
+        private PictureBox previewPictureBox;
+        private DataGridView componentDataGrid;
+        private TextBox infoTextBox;
+        private Button loadButton;
+        private Button addToTrainingButton;
+        private Button sendToCanvasButton;
+        private Label statusLabel;
+        private string mulFolderPath;
+        private List<MultiEntry> loadedMultis = new List<MultiEntry>();
+        
+        // Art cache
+        private readonly Dictionary<ushort, Image> artCache = new Dictionary<ushort, Image>();
+        
+        // Toggle for hiding empty multis
+        private CheckBox hideEmptyCheckBox;
+        private bool hideEmptyMultis = true; // Default to hiding empty multis
+
+        // Size filter controls
+        private NumericUpDown minWidthFilter;
+        private NumericUpDown maxWidthFilter;
+        private NumericUpDown minHeightFilter;
+        private NumericUpDown maxHeightFilter;
+
+        public MulViewerForm()
+        {
+            InitializeComponent();
+            this.Load += MulViewerForm_Load;
+        }
+
+        private void MulViewerForm_Load(object sender, EventArgs e)
+        {
+            // Try to get MUL folder from config first
+            var config = AppConfig.Instance;
+            string defaultMulPath = config.MulFolderPath;
+            
+            // Fallback paths if config is empty
+            if (string.IsNullOrEmpty(defaultMulPath) || !Directory.Exists(defaultMulPath))
+            {
+                // Try UOForever first
+                defaultMulPath = @"C:\Program Files (x86)\UOForever\UO";
+                
+                if (!Directory.Exists(defaultMulPath))
+                {
+                    // Fallback to project directory for development
+                    defaultMulPath = @"C:\Users\SERVER\source\repos\MeesaMultisMaker\MeesaMultisMaker";
+                }
+            }
+
+            if (Directory.Exists(defaultMulPath))
+            {
+                try
+                {
+                    mulFolderPath = defaultMulPath;
+                    
+                    // Load art from MUL folder
+                    LoadArtFromMul();
+                    
+                    loadedMultis = MultiReader.Load(mulFolderPath);
+                    
+                    PopulateMultiList();
+
+                    statusLabel.Text = $"Auto-loaded {loadedMultis.Count} multis from {Path.GetFileName(mulFolderPath)}";
+                    statusLabel.BackColor = Color.LightGreen;
+                    loadButton.Visible = false;
+                }
+                catch (Exception ex)
+                {
+                    statusLabel.Text = $"Auto-load failed: {ex.Message}";
+                    statusLabel.BackColor = Color.LightCoral;
+                    loadButton.Text = "Retry Load";
+                }
+            }
+            else
+            {
+                statusLabel.Text = "Multi files not found. Click 'Load Multi Files...' to browse.";
+                statusLabel.BackColor = Color.LightYellow;
+            }
+        }
+        
+        /// <summary>
+        /// Load art from MUL files only (art.mul/artidx.mul)
+        /// </summary>
+        private void LoadArtFromMul()
+        {
+            if (string.IsNullOrEmpty(mulFolderPath) || !Directory.Exists(mulFolderPath))
+                return;
+
+            try
+            {
+                // Check for traditional MUL format only
+                if (File.Exists(Path.Combine(mulFolderPath, "art.mul")) && 
+                    File.Exists(Path.Combine(mulFolderPath, "artidx.mul")))
+                {
+                    statusLabel.Text = statusLabel.Text + " | Using art.mul/artidx.mul";
+                }
+                else
+                {
+                    statusLabel.Text = statusLabel.Text + " | No art.mul files found - showing placeholders";
+                    statusLabel.BackColor = Color.LightYellow;
+                }
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text += $" | Art init error: {ex.Message}";
+                statusLabel.BackColor = Color.LightYellow;
+            }
+        }
+
+        private void HideEmptyCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            hideEmptyMultis = hideEmptyCheckBox.Checked;
+            PopulateMultiList();
+        }
+
+        private void FilterChanged(object sender, EventArgs e)
+        {
+            PopulateMultiList();
+        }
+
+        /// <summary>
+        /// Calculate the width and height of a multi based on its components
+        /// </summary>
+        private (int width, int height) GetMultiDimensions(MultiEntry entry)
+        {
+            if (entry.Components.Count == 0)
+                return (0, 0);
+
+            int minX = entry.Components.Min(c => c.X);
+            int maxX = entry.Components.Max(c => c.X);
+            int minY = entry.Components.Min(c => c.Y);
+            int maxY = entry.Components.Max(c => c.Y);
+
+            return (maxX - minX + 1, maxY - minY + 1);
+        }
+ 
+        private void PopulateMultiList()
+        {
+            multiListBox.Items.Clear();
+            
+            // Get filter values
+            int minW = minWidthFilter != null ? (int)minWidthFilter.Value : 1;
+            int maxW = maxWidthFilter != null ? (int)maxWidthFilter.Value : 100;
+            int minH = minHeightFilter != null ? (int)minHeightFilter.Value : 1;
+            int maxH = maxHeightFilter != null ? (int)maxHeightFilter.Value : 100;
+
+            int visibleCount = 0;
+            int filteredBySize = 0;
+
+            foreach (var entry in loadedMultis)
+            {
+                // Skip empty multis if hide option is enabled
+                if (hideEmptyMultis && entry.Components.Count == 0)
+                    continue;
+
+                // Apply size filter
+                if (entry.Components.Count > 0)
+                {
+                    var (width, height) = GetMultiDimensions(entry);
+                    if (width < minW || width > maxW || height < minH || height > maxH)
+                    {
+                        filteredBySize++;
+                        continue;
+                    }
+                }
+         
+                string displayText = entry.Components.Count > 0
+                    ? $"Multi ID: 0x{entry.Index:X4} ({entry.Components.Count} components)"
+                    : $"Multi ID: 0x{entry.Index:X4} (empty)";
+  
+                multiListBox.Items.Add(new MultiListItem 
+                { 
+                    Entry = entry, 
+                    DisplayText = displayText 
+                });
+        
+                visibleCount++;
+            }
+       
+            // Update status to show filtered count
+            string statusText = $"Showing {visibleCount} multis";
+            if (filteredBySize > 0)
+            {
+                statusText += $" ({filteredBySize} filtered by size)";
+            }
+            if (hideEmptyMultis)
+            {
+                int emptyCount = loadedMultis.Count(m => m.Components.Count == 0);
+                if (emptyCount > 0)
+                    statusText += $" ({emptyCount} empty hidden)";
+            }
+            statusLabel.Text = statusText;
+        }
+
+        private Image LoadTileImage(ushort tileId)
+        {
+            if (artCache.ContainsKey(tileId))
+                return artCache[tileId];
+
+            Bitmap img = null;
+
+            try
+            {
+                // Check for traditional MUL format only
+                bool hasMul = File.Exists(Path.Combine(mulFolderPath, "art.mul")) && 
+                             File.Exists(Path.Combine(mulFolderPath, "artidx.mul"));
+                
+                if (hasMul)
+                {
+                    img = StaticArtReader.LoadStaticArt(mulFolderPath, tileId);
+                }
+
+                if (img != null)
+                {
+                    artCache[tileId] = img;
+                    return img;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"MulViewer: EXCEPTION loading art 0x{tileId:X4}: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private void InitializeComponent()
+        {
+            this.Text = "Multi Viewer";
+            this.Width = 1100;
+            this.Height = 700;
+            this.MinimumSize = new Size(900, 600);
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            this.StartPosition = FormStartPosition.CenterScreen;
+
+            var mainSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle,
+                SplitterDistance = 300
+            };
+
+            var leftPanel = new Panel { Dock = DockStyle.Fill };
+     
+            loadButton = new Button
+            {
+                Text = "Load Multi Files...",
+                Dock = DockStyle.Top,
+                Height = 35,
+                Font = new Font(this.Font.FontFamily, 9, FontStyle.Bold)
+            };
+            loadButton.Click += LoadButton_Click;
+    
+            // Add "Hide Empty" checkbox below load button
+            hideEmptyCheckBox = new CheckBox
+            {
+                Text = "Hide Empty Multis",
+                Dock = DockStyle.Top,
+                Height = 25,
+                Checked = hideEmptyMultis,
+                Padding = new Padding(5, 5, 0, 0),
+                Font = new Font(this.Font.FontFamily, 8.5f)
+            };
+            hideEmptyCheckBox.CheckedChanged += HideEmptyCheckBox_CheckedChanged;
+
+            // Size filter panel
+            var filterPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 75,
+                Padding = new Padding(5)
+            };
+
+            // Width filter row
+            var widthLabel = new Label { Text = "Width:", Left = 5, Top = 5, Width = 40, Height = 20 };
+            var minWLabel = new Label { Text = "Min:", Left = 50, Top = 5, Width = 30, Height = 20 };
+            minWidthFilter = new NumericUpDown { Left = 80, Top = 3, Width = 50, Minimum = 1, Maximum = 100, Value = 1 };
+            minWidthFilter.ValueChanged += FilterChanged;
+            var maxWLabel = new Label { Text = "Max:", Left = 135, Top = 5, Width = 35, Height = 20 };
+            maxWidthFilter = new NumericUpDown { Left = 170, Top = 3, Width = 50, Minimum = 1, Maximum = 100, Value = 100 };
+            maxWidthFilter.ValueChanged += FilterChanged;
+
+            // Height filter row
+            var heightLabel = new Label { Text = "Height:", Left = 5, Top = 30, Width = 45, Height = 20 };
+            var minHLabel = new Label { Text = "Min:", Left = 50, Top = 30, Width = 30, Height = 20 };
+            minHeightFilter = new NumericUpDown { Left = 80, Top = 28, Width = 50, Minimum = 1, Maximum = 100, Value = 1 };
+            minHeightFilter.ValueChanged += FilterChanged;
+            var maxHLabel = new Label { Text = "Max:", Left = 135, Top = 30, Width = 35, Height = 20 };
+            maxHeightFilter = new NumericUpDown { Left = 170, Top = 28, Width = 50, Minimum = 1, Maximum = 100, Value = 100 };
+            maxHeightFilter.ValueChanged += FilterChanged;
+
+            // Reset button
+            var resetFilterBtn = new Button { Text = "Reset Filters", Left = 5, Top = 52, Width = 90, Height = 22 };
+            resetFilterBtn.Click += (s, ev) =>
+            {
+                minWidthFilter.Value = 1;
+                maxWidthFilter.Value = 100;
+                minHeightFilter.Value = 1;
+                maxHeightFilter.Value = 100;
+            };
+
+            filterPanel.Controls.Add(widthLabel);
+            filterPanel.Controls.Add(minWLabel);
+            filterPanel.Controls.Add(minWidthFilter);
+            filterPanel.Controls.Add(maxWLabel);
+            filterPanel.Controls.Add(maxWidthFilter);
+            filterPanel.Controls.Add(heightLabel);
+            filterPanel.Controls.Add(minHLabel);
+            filterPanel.Controls.Add(minHeightFilter);
+            filterPanel.Controls.Add(maxHLabel);
+            filterPanel.Controls.Add(maxHeightFilter);
+            filterPanel.Controls.Add(resetFilterBtn);
+
+            multiListBox = new ListBox
+            {
+                Dock = DockStyle.Fill,
+                IntegralHeight = false,
+                Font = new Font("Consolas", 9),
+                SelectionMode = SelectionMode.MultiExtended
+            };
+            multiListBox.SelectedIndexChanged += MultiListBox_SelectedIndexChanged;
+
+            statusLabel = new Label
+            {
+                Text = "No multi files loaded",
+                Dock = DockStyle.Bottom,
+                Height = 40,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(5),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = SystemColors.Info
+            };
+
+            leftPanel.Controls.Add(multiListBox);
+            leftPanel.Controls.Add(filterPanel);
+            leftPanel.Controls.Add(hideEmptyCheckBox);
+            leftPanel.Controls.Add(loadButton);
+            leftPanel.Controls.Add(statusLabel);
+
+            mainSplit.Panel1.Controls.Add(leftPanel);
+
+            var rightSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Horizontal,
+                BorderStyle = BorderStyle.FixedSingle,
+                SplitterDistance = 300
+            };
+
+            var previewPanel = new Panel { Dock = DockStyle.Fill };
+         
+            infoTextBox = new TextBox
+            {
+                Dock = DockStyle.Top,
+                Height = 40,
+                Multiline = true,
+                ReadOnly = true,
+                BackColor = Color.WhiteSmoke,
+                Font = new Font("Consolas", 8.5f),
+                Text = "Select one or more multis from the list...\r\n(Use Ctrl/Shift for multi-select)"
+            };
+
+            previewPictureBox = new PictureBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.Fixed3D
+            };
+            previewPictureBox.Paint += PreviewPictureBox_Paint;
+
+            previewPanel.Controls.Add(previewPictureBox);
+            previewPanel.Controls.Add(infoTextBox);
+
+            var gridPanel = new Panel { Dock = DockStyle.Fill };
+
+            componentDataGrid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
+                RowHeadersVisible = false,
+                Font = new Font("Consolas", 9)
+            };
+         
+            componentDataGrid.Columns.Add("TileID", "TileID");
+            componentDataGrid.Columns.Add("X", "X");
+            componentDataGrid.Columns.Add("Y", "Y");
+            componentDataGrid.Columns.Add("Z", "Z");
+            componentDataGrid.Columns.Add("Flags", "Flags");
+
+            // Button panel at bottom with explicit positioning
+            var buttonPanel = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 45,
+                Padding = new Padding(5)
+            };
+
+            addToTrainingButton = new Button
+            {
+                Text = "Add to Training",
+                Width = 120,
+                Height = 30,
+                Left = 5,
+                Top = 8,
+                Enabled = false,
+                BackColor = Color.LightGreen
+            };
+            addToTrainingButton.Click += AddToTrainingButton_Click;
+
+            sendToCanvasButton = new Button
+            {
+                Text = "Send to Canvas",
+                Width = 120,
+                Height = 30,
+                Left = 135,
+                Top = 8,
+                Enabled = false,
+                BackColor = Color.LightBlue
+            };
+            sendToCanvasButton.Click += SendToCanvasButton_Click;
+
+            var refreshButton = new Button
+            {
+                Text = "Refresh Preview",
+                Width = 120,
+                Height = 30,
+                Left = 265,
+                Top = 8
+            };
+            refreshButton.Click += (s, e) => previewPictureBox.Invalidate();
+
+            buttonPanel.Controls.Add(addToTrainingButton);
+            buttonPanel.Controls.Add(sendToCanvasButton);
+            buttonPanel.Controls.Add(refreshButton);
+
+            gridPanel.Controls.Add(componentDataGrid);
+            gridPanel.Controls.Add(buttonPanel);
+
+            rightSplit.Panel1.Controls.Add(previewPanel);
+            rightSplit.Panel2.Controls.Add(gridPanel);
+
+            mainSplit.Panel2.Controls.Add(rightSplit);
+
+            this.Controls.Add(mainSplit);
+        }
+
+        private void LoadButton_Click(object sender, EventArgs e)
+        {
+            using (var folderDialog = new FolderBrowserDialog())
+            {
+                folderDialog.Description = "Select folder containing multi.mul, multi.idx, art.mul, and artidx.mul";
+                if (folderDialog.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        mulFolderPath = folderDialog.SelectedPath;
+                        
+                        // Load art from MUL folder
+                        LoadArtFromMul();
+                        
+                        loadedMultis = MultiReader.Load(mulFolderPath);
+                        
+                        PopulateMultiList();
+
+                        statusLabel.Text = $"Loaded {loadedMultis.Count} multis from {Path.GetFileName(mulFolderPath)}";
+                        statusLabel.BackColor = Color.LightGreen;
+                    }
+                    catch (Exception ex)
+                    {
+                        statusLabel.Text = $"Error: {ex.Message}";
+                        statusLabel.BackColor = Color.LightCoral;
+                    }
+                }
+            }
+        }
+
+        private void MultiListBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            int selectedCount = multiListBox.SelectedItems.Count;
+      
+            if (selectedCount == 0)
+            {
+                componentDataGrid.Rows.Clear();
+                addToTrainingButton.Enabled = false;
+                sendToCanvasButton.Enabled = false;
+                infoTextBox.Text = "Select one or more multis from the list...\r\n(Use Ctrl/Shift for multi-select)";
+                previewPictureBox.Invalidate();
+                return;
+            }
+
+            // Show info for selected items
+            if (selectedCount == 1)
+            {
+                var item = multiListBox.SelectedItem as MultiListItem;
+                if (item == null) return;
+
+                var entry = item.Entry;
+
+                infoTextBox.Text = $"Multi ID: 0x{entry.Index:X4}\r\n" +
+                    $"Components: {entry.Components.Count} | Entry Size: {entry.EntrySize} bytes";
+
+                componentDataGrid.Rows.Clear();
+                // Display in UO's multi component order: X, then Y, then Z
+                foreach (var comp in entry.Components.OrderBy(c => c.X).ThenBy(c => c.Y).ThenBy(c => c.Z))
+                {
+                    componentDataGrid.Rows.Add(
+                        $"0x{comp.TileId:X4}",
+                        comp.X.ToString(),
+                        comp.Y.ToString(),
+                        comp.Z.ToString(),
+                        comp.Flags.ToString()
+                    );
+                }
+
+                bool hasComponents = entry.Components.Count > 0;
+                addToTrainingButton.Enabled = hasComponents;
+                sendToCanvasButton.Enabled = hasComponents;
+            }
+            else
+            {
+                // Multiple selection
+                int totalComponents = 0;
+                int nonEmptyCount = 0;
+    
+                foreach (MultiListItem item in multiListBox.SelectedItems)
+                {
+                    if (item?.Entry != null)
+                    {
+                        totalComponents += item.Entry.Components.Count;
+                        if (item.Entry.Components.Count > 0)
+                            nonEmptyCount++;
+                    }
+                }
+
+                infoTextBox.Text = $"Selected: {selectedCount} multis\r\n" +
+                    $"Non-empty: {nonEmptyCount} | Total components: {totalComponents}";
+
+                componentDataGrid.Rows.Clear();
+                addToTrainingButton.Enabled = nonEmptyCount > 0;
+                // Only enable Send to Canvas for single selection
+                sendToCanvasButton.Enabled = false;
+            }
+
+            previewPictureBox.Invalidate();
+        }
+
+        private void PreviewPictureBox_Paint(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.Clear(Color.White);
+
+            if (multiListBox.SelectedItems.Count != 1) return;
+
+            var item = multiListBox.SelectedItem as MultiListItem;
+            if (item?.Entry == null || item.Entry.Components.Count == 0) return;
+
+            var entry = item.Entry;
+   
+            int minX = entry.Components.Min(c => c.X);
+            int maxX = entry.Components.Max(c => c.X);
+            int minY = entry.Components.Min(c => c.Y);
+            int maxY = entry.Components.Max(c => c.Y);
+            int minZ = entry.Components.Min(c => c.Z);
+            int maxZ = entry.Components.Max(c => c.Z);
+
+            int width = maxX - minX + 1;
+            int height = maxY - minY + 1;
+
+            const int TILE_WIDTH = 44;
+            const int TILE_HEIGHT = 44;
+            const int Z_PIXEL = 4;
+
+            int canvasW = previewPictureBox.Width - 80; // More margin
+            int canvasH = previewPictureBox.Height - 80;
+ 
+            int isoWidth = (width + height) * (TILE_WIDTH / 2);
+            // Account for Z-height in total height calculation
+            int isoHeight = (width + height) * (TILE_HEIGHT / 2) + (maxZ - minZ) * Z_PIXEL;
+       
+            float zoom = Math.Min((float)canvasW / isoWidth, (float)canvasH / isoHeight);
+            zoom = Math.Min(zoom, 1.0f);
+
+            // Center the preview properly
+            int offsetX = (previewPictureBox.Width - (int)(isoWidth * zoom)) / 2;
+            // Account for Z offset in centering
+            int zTotalOffset = (int)((maxZ - minZ) * Z_PIXEL * zoom);
+            int offsetY = 40 + zTotalOffset; // Start lower to accommodate tall structures
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // Draw faint grid background
+            using (var gridPen = new Pen(Color.FromArgb(20, Color.LightGray)))
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        float isoX = (x - y) * (TILE_WIDTH / 2f);
+                        float isoY = (x + y) * (TILE_HEIGHT / 2f);
+
+                        int sx = (int)(offsetX + isoX * zoom);
+                        int sy = (int)(offsetY + isoY * zoom);
+      
+                        int hw = (int)Math.Round((TILE_WIDTH / 2f) * zoom);
+                        int hh = (int)Math.Round((TILE_HEIGHT / 2f) * zoom);
+    
+                        Point[] diamond = new Point[]
+                        {
+                            new Point(sx, sy - hh),
+                            new Point(sx + hw, sy),
+                            new Point(sx, sy + hh),
+                            new Point(sx - hw, sy)
+                        };
+  
+                        g.DrawPolygon(gridPen, diamond);
+                    }
+                }
+            }
+
+            // Draw components with proper isometric draw order (painter's algorithm - back to front)
+            // 1. Lower (X + Y) values first - these are further back in isometric view
+            // 2. Within same depth (X+Y), lower Z values first - ground before elevated
+            foreach (var comp in entry.Components
+                .OrderBy(c => c.X + c.Y)  // Isometric depth: back to front
+                .ThenBy(c => c.Z))        // Bottom to top
+            {
+                int gx = comp.X - minX;
+                int gy = comp.Y - minY;
+                int gz = comp.Z - minZ;
+
+                float isoX = (gx - gy) * (TILE_WIDTH / 2f);
+                float isoY = (gx + gy) * (TILE_HEIGHT / 2f);
+
+                int sx = (int)(offsetX + isoX * zoom);
+                int sy = (int)(offsetY + isoY * zoom);
+   
+                int zOffset = (int)Math.Round(gz * Z_PIXEL * zoom);
+                new Point(sx, sy - tileSize/2),
+                new Point(sx + tileSize/2, sy),
+                new Point(sx, sy + tileSize/2),
+                new Point(sx - tileSize/2, sy)
+            };
+
+            using (var brush = new SolidBrush(tileColor))
+                g.FillPolygon(brush, diamond);
+
+            using (var pen = new Pen(Color.Black, 1))
+                g.DrawPolygon(pen, diamond);
+        }
+
+        private Color GetTileColor(ushort tileId, int relativeZ)
+        {
+            if (relativeZ == 0) return Color.SandyBrown;
+            if (relativeZ < 5) return Color.BurlyWood;
+            if (relativeZ < 10) return Color.Tan;
+            if (relativeZ < 20) return Color.Peru;
+            return Color.SaddleBrown;
+        }
+
+        private void AddToTrainingButton_Click(object sender, EventArgs e)
+        {
+            if (multiListBox.SelectedItems.Count == 0) return;
+
+            var trainingData = new List<List<PlacedObject>>();
+            int successCount = 0;
+
+            foreach (MultiListItem item in multiListBox.SelectedItems)
+            {
+                if (item?.Entry == null || item.Entry.Components.Count == 0)
+                    continue;
+
+                var entry = item.Entry;
+                var placedObjects = new List<PlacedObject>();
+
+                int layer = 0;
+                // Process in UO's multi component order: X, then Y, then Z
+                foreach (var comp in entry.Components.OrderBy(c => c.X).ThenBy(c => c.Y).ThenBy(c => c.Z))
+                {
+                    string graphicId = $"0x{comp.TileId:X4}";
+                    
+                    // Load image from MUL only
+                    Image img = LoadTileImage(comp.TileId);
+
+                    placedObjects.Add(new PlacedObject
+                    {
+                        Image = img,
+                        GraphicId = graphicId,
+                        GridX = comp.X,
+                        GridY = comp.Y,
+                        Z = comp.Z,
+                        Flags = comp.Flags,
+                        Layer = layer++
+                    });
+                }
+
+                if (placedObjects.Count > 0)
+                {
+                    trainingData.Add(placedObjects);
+                    successCount++;
+                }
+            }
+
+            if (trainingData.Count > 0)
+            {
+                TrainingDataReady?.Invoke(trainingData);   
+                statusLabel.Text = $"Added {successCount} multi(s) to training data";
+                statusLabel.BackColor = Color.LightGreen;
+            }
+            else
+            {
+                statusLabel.Text = "No valid multis to add to training";
+                statusLabel.BackColor = Color.LightYellow;
+            }
+        }
+
+        private void SendToCanvasButton_Click(object sender, EventArgs e)
+        {
+            if (multiListBox.SelectedItems.Count != 1) return;
+
+            var item = multiListBox.SelectedItem as MultiListItem;
+            if (item?.Entry == null || item.Entry.Components.Count == 0)
+            {
+                statusLabel.Text = "No valid multi selected";
+                statusLabel.BackColor = Color.LightYellow;
+                return;
+            }
+
+            var entry = item.Entry;
+            var sb = new StringBuilder();
+
+            // Generate text format: GraphicId X Y Z Flags
+            foreach (var comp in entry.Components.OrderBy(c => c.X).ThenBy(c => c.Y).ThenBy(c => c.Z))
+            {
+                sb.AppendLine($"0x{comp.TileId:X4}   {comp.X}   {comp.Y}   {comp.Z}   {comp.Flags}   0");
+            }
+
+            string multiText = sb.ToString();
+            
+            // Fire the event to send to main form
+            GeneratedTextReady?.Invoke(multiText);
+            
+            statusLabel.Text = $"Sent Multi 0x{entry.Index:X4} ({entry.Components.Count} items) to canvas";
+            statusLabel.BackColor = Color.LightGreen;
+        }
+
+        private class MultiListItem
+        {
+            public MultiEntry Entry { get; set; }
+            public string DisplayText { get; set; }
+            public override string ToString() => DisplayText;
+        }
+    }
+}
