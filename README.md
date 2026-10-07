@@ -215,10 +215,12 @@ Browser for viewing and generating multi structures from MUL files.
 
 Text-to-3D sprite pipeline ("MultisMaker1"): prompt ComfyUI for a model, orbit it through the 8 UO facings, slice it into floor-aligned UO tiles, and send the tiles to the canvas.
 
-- **Text to PLY** - prompt, seed, sampler steps; optional init image (including straight from the Painter)
-- **Viewport** - orbit/zoom, 8 UO facing snap, UO-mode pitch lock, splat-density cap for previews
-- **Tile slicing** - hard-cut by floor cell with 3x3 hollow-expand, origin-relative send, calibrated 44px export
-- **Dials** - rotation/scale bake into positions (uniform-lockable), debounced re-slice
+- **Text to PLY** - prompt, seed, sampler steps via ComfyUI; optional init image (including straight from the Painter); `Use view as input` for iterative refine; timestamped `.ply` outputs
+- **Viewport** - orbit/zoom, 8 UO facing snap + `Set S`, UO-mode pitch lock (~26.57), splat-density cap for previews, middle-drag pan on ground plane, Quad Top/Front/Side/Persp views, direction buttons
+- **Tile slicing** - floor-space hard-cut by splat center (no blend); `TILE 44x44`, `Z_PIXEL 4`, `FloorGridCells 10`; floor grid drives tiles (no manual X/Z counts); origin-relative send, canvas centers batch; calibrated 1 cell = 44px export + zoom; centered crop; dials-baked + slice-time yaw; orbit re-cuts, dials re-cut debounced, `EnsureFreshSlice` on send/export
+- **Tile dock** - slice/clear, isolate render path, send-all (`TilesReady`), export-all, 9-slice expand + hollow, auto-refresh
+- **Edit survival** - tile list survives delete/clone/undo via `Reclassify` / `RefreshSlicesKeepActive`; undo split `IsDelete` vs mutate
+- **Dials + offsets** - rotation/scale bake into positions; Scale X/Y/Z lock (default on); OffX/OffY numerics + `O0` mirror `PixelOffsetX/Y`, non-destructive, no bitmap padding
 - **Loop mode** - auto-resubmit forever (fresh image and/or fresh LLM-dreamed prompt each round)
 - **Spintable export** - 24-frame rotation sheets (+ GIF)
 
@@ -230,10 +232,19 @@ Viewer/player/editor for Ultima Online mobile animations (`anim.mul` family): sc
 
 ComfyUI-powered sound design: text-to-SFX, text-to-music, voice cloning / voice design (Qwen TTS), a webcam-driven ambient **Watcher** that scores the scene with generative foley + music layers, and UO `sound.mul` / music-folder integration.
 
-- **SFX / Music / Voice tabs** - prompt, negative prompt, duration, seed, steps, per-kind workflows
-- **Watcher tab** - sense cadence, per-layer clip lengths, scene-change gating (frame + prompt similarity), crossfaded layer swaps, DJ timeline of everything aired
-- **Quality gates** (optional, needs the Python setup above) - vocal bouncer, CLAP prompt-match floor, loudness matching, auto audio captions stored in the library
-- **Library tab** - every generation logged with prompt/seed/workflow/file, content-searchable once captioned
+- **SFX / Music / Voice tabs** - prompt, negative prompt, duration, seed, steps, per-kind workflows (`FASTAUDIOTGEN` SFX, `WORKINGAUDIO` Music, Qwen TTS clone/design); category forced `SFX`/`Music`; reprompt off by default; saver `filename_prefix` pinned to short IDs (no `Errno 22`); `upload/audio` then `upload/image` fallback; queue/history polling with fail-fast server errors
+- **Filenames + ledgers** - short IDs (`yyMMdd_HHmmss_kind`), never prompt text; master pipe-delimited `AudioPrompts.csv` (`id|created|kind|seed|duration_s|audio_file|prompt`) + `library.jsonl` with prompt/seed/workflow/file/scene/caption
+- **Waveform + edits** - transport, trim/fade/normalize/gain/resample/mono/reverse/silence-crop/loop-crossfade; edge-silence trim (`-45dB` + pad + micro-fades); `ffmpeg` decode to editable WAV + `mm_savewav` sibling
+- **Radio** - AutoQueue keeps 1 ahead, tight 750ms end-poll swap; `ON AIR` mini-views with playheads
+- **Watcher sensing + scheduling** - webcam via `ffmpeg` dshow, VL `Qwen2-VL-2B` via local server; two editable persisted questions (foley/music); sense every N sec (never blocks), 1s scheduler prefetches before clip end reusing freshest prompt; foley length = period, music overlap + 15s minimum hold; adaptive render estimates with EWMA; queue-to-ready timing; 15s failure backoff; layer-disable mid-render keeps file without airing; snapshot force-queues
+- **Change-gating** - 16x16 gray-hash frame gate (adjustable `Δ%`, default 4%) + word-Jaccard prompt gate (0.85); static scenes loop on-air file with zero GPU (loop-prepped `CrossfadeLoop`), dynamic scenes prefetch with lead time
+- **Crossfaded swaps** - dual-alias MCI flip-flop, 1s foley / 2s music over 12 steps (clamped to 60% body), late renders degrade to fade-in, cancel finishes instantly
+- **DJ timeline** - vertical cards newest-first (orange foley / cyan music), time/layer/dur/seed header, clip + prompt, live progress, `ON AIR` pulse, `played Xs` stamp; click for full `PROMPT`/`SCENE`/`HEARD`, hover tooltip, double-click loads to Clips, Clear, 200 cap
+- **Quality gates** (optional Python sidecar `AudioGateServer.py` on `127.0.0.1:18171`, killed on close) - Whisper vocal bouncer (≥4 words on instrumental intent → one hardened retry, air best, loser kept); CLAP match floor (reject <0.10 → one retry, air best); LUFS match (`-19` music / `-16` foley, `TP -2`, `LRA 11`, two-pass `loudnorm` with rate pin); scores in log + timeline/library tags; `Bounce vocals` / `CLAP gate` checkboxes
+- **Captions** (`laion/sound-effect-captioning-whisper`, lazy load, first 30s) - auto-caption aired + manual/radio takes into library `Caption` (searchable, backfilled by Describe); Describe buttons on timeline cards + clip panel
+- **Manual/radio behavior** - same trim + loudnorm; transcribe/CLAP measured + logged (no auto-retry); radio buffers, library appends
+- **UO integration** - legacy pair + `soundLegacyMUL.uop` (1655 entries, in-place fixed-size replace + `.bak`, `FitToFrames`); `Music/Digital/*.mp3` + `Config.txt` browser; slot play, clip-to-slot, save, fit; 22050 mono conversion for legacy slots
+- **Library tab** - prompt/kind/scene/caption search, missing-file flags, prune, reuse prompt, play
 
 ### Image Editor
 
