@@ -1,4 +1,4 @@
-﻿﻿﻿using MeesaMultisMaker.ComfyUI;
+﻿using MeesaMultisMaker.ComfyUI;
 using MeesaMultisMaker.Utils;
 using System;
 using System.Drawing;
@@ -32,6 +32,7 @@ namespace MeesaMultisMaker
         private ComboBox workflowTypeComboBox;
         private ComboBox samplerComboBox;
         private ComboBox schedulerComboBox;
+        private ComboBox modelComboBox;
 
         private Button selectInputImageButton;
         private Label inputImageLabel;
@@ -178,6 +179,45 @@ namespace MeesaMultisMaker
             workflowTypeComboBox.SelectedIndex = 0;
             workflowTypeComboBox.SelectedIndexChanged += WorkflowType_Changed;
             controlsPanel.Controls.Add(workflowTypeComboBox);
+
+            var refreshModelsButton = new Button
+            {
+                Text = "Refresh",
+                Location = new Point(330, y),
+                Width = 75,
+                Height = 23
+            };
+            refreshModelsButton.Click += async (s, e) =>
+            {
+                refreshModelsButton.Enabled = false;
+                try { await RefreshModelsAsync(); }
+                finally { refreshModelsButton.Enabled = true; }
+            };
+            controlsPanel.Controls.Add(refreshModelsButton);
+
+            y += 35;
+
+            var modelLabel = new Label
+            {
+                Text = "Model:",
+                Location = new Point(10, y),
+                Width = 100,
+                Height = 20,
+                Font = new Font(this.Font, FontStyle.Bold)
+            };
+            controlsPanel.Controls.Add(modelLabel);
+
+            modelComboBox = new ComboBox
+            {
+                Location = new Point(120, y),
+                Width = 285,
+                Height = 21,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            modelComboBox.Items.AddRange(new object[] { Text2ImageWorkflow.DEFAULT_CHECKPOINT, Flux2KleinWorkflow.KLEIN_DISPLAY_NAME });
+            modelComboBox.SelectedIndex = 0;
+            modelComboBox.SelectedIndexChanged += ModelComboBox_SelectedIndexChanged;
+            controlsPanel.Controls.Add(modelComboBox);
 
             y += 35;
 
@@ -675,6 +715,9 @@ namespace MeesaMultisMaker
 
                 string workflow;
                 bool isImg2Img = workflowTypeComboBox.SelectedIndex == 1;
+                string selectedModel = modelComboBox?.SelectedItem?.ToString() ?? Text2ImageWorkflow.DEFAULT_CHECKPOINT;
+                string selectedSampler = samplerComboBox.SelectedItem.ToString();
+                bool useKlein = Flux2KleinWorkflow.IsKlein(selectedModel);
 
                 if (isImg2Img)
                 {
@@ -701,19 +744,44 @@ namespace MeesaMultisMaker
                         throw;
                     }
 
-                    workflow = Image2ImageWorkflow.CreateWorkflow(
-                     promptTextBox.Text,
-                       negativePromptTextBox.Text,
-                  uploadedFilename,
-                         (int)resizeWidthNumeric.Value,
-                  (int)resizeHeightNumeric.Value,
-                    (int)stepsNumeric.Value,
-                    (double)cfgNumeric.Value,
-                    (double)denoiseNumeric.Value,
-                      seed,
-                 samplerComboBox.SelectedItem.ToString(),
-                        schedulerComboBox.SelectedItem.ToString()
-                  );
+                    if (useKlein)
+                        workflow = Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                         promptTextBox.Text,
+                           negativePromptTextBox.Text,
+                      uploadedFilename,
+                             (int)resizeWidthNumeric.Value,
+                      (int)resizeHeightNumeric.Value,
+                          seed,
+                     samplerComboBox.SelectedItem.ToString()
+                      );
+                    else
+                        workflow = Image2ImageWorkflow.CreateWorkflow(
+                         promptTextBox.Text,
+                           negativePromptTextBox.Text,
+                      uploadedFilename,
+                             (int)resizeWidthNumeric.Value,
+                      (int)resizeHeightNumeric.Value,
+                        (int)stepsNumeric.Value,
+                        (double)cfgNumeric.Value,
+                        (double)denoiseNumeric.Value,
+                          seed,
+                     samplerComboBox.SelectedItem.ToString(),
+                            schedulerComboBox.SelectedItem.ToString(),
+                            selectedModel
+                      );
+                }
+                else if (useKlein)
+                {
+                    workflow = Flux2KleinWorkflow.CreateWorkflow(
+                  promptTextBox.Text,
+                          "",
+              (int)widthNumeric.Value,
+                 (int)heightNumeric.Value,
+             Flux2KleinWorkflow.KLEIN_STEPS,
+                           Flux2KleinWorkflow.KLEIN_CFG,
+                       seed,
+           selectedSampler
+                         );
                 }
                 else
                 {
@@ -726,7 +794,8 @@ namespace MeesaMultisMaker
                            (double)cfgNumeric.Value,
                        seed,
            samplerComboBox.SelectedItem.ToString(),
-                          schedulerComboBox.SelectedItem.ToString()
+                          schedulerComboBox.SelectedItem.ToString(),
+                          selectedModel
                          );
                 }
 
@@ -865,6 +934,67 @@ namespace MeesaMultisMaker
         {
             bool isImg2Img = workflowTypeComboBox.SelectedIndex == 1;
             img2imgPanel.Visible = isImg2Img;
+            // Klein img2img and txt2img both run 4 steps per the baseline user
+            // workflow (reference-edit graph, no denoise input).
+            if (Flux2KleinWorkflow.IsKlein(modelComboBox?.SelectedItem?.ToString()))
+                ApplyKleinPreset(isImg2Img);
+        }
+
+        private void ApplyKleinPreset(bool isImg2Img)
+        {
+            int targetSteps = Flux2KleinWorkflow.KLEIN_STEPS;
+            if (stepsNumeric != null)
+                stepsNumeric.Value = Math.Max(stepsNumeric.Minimum, Math.Min(stepsNumeric.Maximum, targetSteps));
+            if (cfgNumeric != null)
+                cfgNumeric.Value = Math.Max(cfgNumeric.Minimum, Math.Min(cfgNumeric.Maximum, (decimal)Flux2KleinWorkflow.KLEIN_CFG));
+        }
+
+        private void ModelComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            // When Klein is selected, snap steps/CFG/sampler to its required values:
+            // 4 steps + cfg 1.0 for both txt2img and img2img (baseline user workflow).
+            // Switching back to an SD checkpoint leaves the controls untouched.
+            if (modelComboBox == null) return;
+            if (!Flux2KleinWorkflow.IsKlein(modelComboBox.SelectedItem?.ToString())) return;
+            bool isImg2Img = workflowTypeComboBox != null && workflowTypeComboBox.SelectedIndex == 1;
+            ApplyKleinPreset(isImg2Img);
+            if (samplerComboBox != null)
+            {
+                int idx = samplerComboBox.Items.IndexOf("euler");
+                if (idx >= 0) samplerComboBox.SelectedIndex = idx;
+            }
+        }
+
+        private async Task RefreshModelsAsync()
+        {
+            if (modelComboBox == null) return;
+            try
+            {
+                var client = new ComfyUIClient(comfyUrlTextBox.Text);
+                var checkpoints = await client.GetAvailableCheckpoints();
+                if (checkpoints == null || checkpoints.Count == 0) return;
+
+                string currentSelection = modelComboBox.SelectedItem?.ToString();
+                modelComboBox.Items.Clear();
+                foreach (var cp in checkpoints)
+                    modelComboBox.Items.Add(cp);
+
+                // Klein is a virtual engine entry, not a server checkpoint - always keep it listed.
+                if (modelComboBox.Items.IndexOf(Flux2KleinWorkflow.KLEIN_DISPLAY_NAME) < 0)
+                    modelComboBox.Items.Add(Flux2KleinWorkflow.KLEIN_DISPLAY_NAME);
+
+                if (!string.IsNullOrEmpty(currentSelection))
+                {
+                    int idx = modelComboBox.Items.IndexOf(currentSelection);
+                    if (idx >= 0) { modelComboBox.SelectedIndex = idx; return; }
+                }
+                int defaultIdx = modelComboBox.Items.IndexOf(Text2ImageWorkflow.DEFAULT_CHECKPOINT);
+                modelComboBox.SelectedIndex = defaultIdx >= 0 ? defaultIdx : 0;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error refreshing models: {ex.Message}");
+            }
         }
 
         private void SelectInputImage_Click(object sender, EventArgs e)

@@ -113,6 +113,7 @@
     <Compile Include="Biome\BiomeBrushManager.cs" />
     <Compile Include="Biome\BiomeGenerator.cs" />
     <Compile Include="ComfyUI\ComfyUIClient.cs" />
+    <Compile Include="ComfyUI\Flux2KleinImage2ImageWorkflow.cs" />
     <Compile Include="ComfyUI\Flux2KleinInpaintBatchWorkflow.cs" />
     <Compile Include="ComfyUI\Flux2KleinInpaintWorkflow.cs" />
     <Compile Include="Controls\HoloScrollPanel.cs">
@@ -230,9 +231,15 @@
     <Content Include="Audio\AudioGateServer.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="Captions\UO_Sounds.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Compile Include="Audio\CameraCapture.cs" />
     <Compile Include="Audio\VisionEngine.cs" />
     <Compile Include="AudioEditorForm.Watcher.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="AudioEditorForm.Slots.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Mul\SoundMul.cs" />

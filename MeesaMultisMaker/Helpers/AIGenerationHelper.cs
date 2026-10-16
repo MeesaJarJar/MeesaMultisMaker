@@ -48,7 +48,10 @@ namespace MeesaMultisMaker.Helpers
                     settings.Steps,
                     settings.Cfg,
                     settings.Denoise,
-                    settings.Seed
+                    settings.Seed,
+                    settings.Checkpoint,
+                    settings.Sampler,
+                    settings.Scheduler
                 );
             }
             else
@@ -60,7 +63,9 @@ namespace MeesaMultisMaker.Helpers
                     settings.ResolutionHeight,
                     settings.Steps,
                     settings.Cfg,
-                    settings.Seed
+                    settings.Seed,
+                    settings.Checkpoint,
+                    settings.Sampler
                 );
             }
 
@@ -103,7 +108,10 @@ namespace MeesaMultisMaker.Helpers
                 settings.Steps,
                 settings.Cfg,
                 settings.Denoise,
-                settings.Seed
+                settings.Seed,
+                settings.Checkpoint,
+                settings.Sampler,
+                settings.Scheduler
             );
 
             if (settings.DropBlackPixels && result != null)

@@ -906,6 +906,24 @@ namespace MeesaMultisMaker
             public long? Seed { get; set; }
             public string Sampler { get; set; }
             public string Scheduler { get; set; }
+            public string Checkpoint { get; set; }
+        }
+
+        /// <summary>
+        /// Klein selected => Klein img2img graph, never silent DreamShaper.
+        /// SD selections keep the existing Image2ImageWorkflow path.
+        /// </summary>
+        private static string BuildRegenWorkflow(BatchSettings settings, string uploadedName, int targetWidth, int targetHeight)
+        {
+            if (Flux2KleinWorkflow.IsKlein(settings.Checkpoint))
+                return Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                    settings.Prompt, settings.Negative, uploadedName,
+                    targetWidth, targetHeight, settings.Seed, settings.Sampler);
+            return Image2ImageWorkflow.CreateWorkflow(
+                settings.Prompt, settings.Negative, uploadedName,
+                targetWidth, targetHeight, settings.Steps, settings.Cfg,
+                settings.Denoise, settings.Seed, settings.Sampler, settings.Scheduler,
+                settings.Checkpoint);
         }
 
         private async Task BatchImg2ImgFromManifest()
@@ -998,7 +1016,7 @@ namespace MeesaMultisMaker
                             padded.Save(ms, ImageFormat.Png);
                             var uploadBytes = ms.ToArray();
                             var uploadedName = await client.UploadImage(uploadBytes, $"tile_{item.GraphicId}.png");
-                            var workflow = Image2ImageWorkflow.CreateWorkflow(settings.Prompt, settings.Negative, uploadedName, targetWidth, targetHeight, settings.Steps, settings.Cfg, settings.Denoise, settings.Seed, settings.Sampler, settings.Scheduler);
+                            var workflow = BuildRegenWorkflow(settings, uploadedName, targetWidth, targetHeight);
                             var promptId = await client.QueuePrompt(workflow);
                             if (string.IsNullOrEmpty(promptId)) continue;
 
@@ -1202,7 +1220,7 @@ var settings = GetAISettingsFromPanel();
 
                                 var client = new ComfyUIClient(settings.Url);
                                 var uploadedName = await client.UploadImage(imageBytes, $"batch_{item.GraphicId}.png");
-                                var workflow = Image2ImageWorkflow.CreateWorkflow(settings.Prompt, settings.Negative, uploadedName, targetWidth, targetHeight, settings.Steps, settings.Cfg, settings.Denoise, settings.Seed, settings.Sampler, settings.Scheduler);
+                                var workflow = BuildRegenWorkflow(settings, uploadedName, targetWidth, targetHeight);
                                 var promptId = await client.QueuePrompt(workflow);
                                 if (string.IsNullOrEmpty(promptId)) { SetAIStatus("Failed to queue prompt", Color.Red); return; }
                                 SetAIStatus("Generating...", Color.Blue);
@@ -1388,7 +1406,7 @@ var settings = GetAISettingsFromPanel();
                             var uploadBytes = ms.ToArray();
                             SetAIStatus("Uploading to ComfyUI...", Color.Blue);
                             var uploadedName = await client.UploadImage(uploadBytes, "composite_multi.png");
-                            var workflow = Image2ImageWorkflow.CreateWorkflow(settings.Prompt, settings.Negative, uploadedName, targetWidth, targetHeight, settings.Steps, settings.Cfg, settings.Denoise, settings.Seed, settings.Sampler, settings.Scheduler);
+                            var workflow = BuildRegenWorkflow(settings, uploadedName, targetWidth, targetHeight);
                             var promptId = await client.QueuePrompt(workflow);
                             if (string.IsNullOrEmpty(promptId)) { SetAIStatus("Failed to queue prompt", Color.Red); return; }
                             SetAIStatus("Generating...", Color.Blue);
@@ -1675,7 +1693,22 @@ var settings = GetAISettingsFromPanel();
             {
                 if (obj.OriginalImage != null)
                 {
-                    obj.Image?.Dispose();
+                    // Mirror RevertAIChangesForObjects: never install a disposed
+                    // corpse, and never dispose the backup we are about to keep
+                    // (Image may alias OriginalImage or a shared cache entry).
+                    if (!IsImageAlive(obj.OriginalImage))
+                    {
+                        try { obj.OriginalImage.Dispose(); }
+                        catch { }
+                        obj.OriginalImage = null;
+                        outputTextBox.AppendText($"Revert {obj.GraphicId}: backup was unusable, skipped\r\n");
+                        continue;
+                    }
+                    if (obj.Image != null && !ReferenceEquals(obj.Image, obj.OriginalImage))
+                    {
+                        try { obj.Image.Dispose(); }
+                        catch { }
+                    }
                     obj.Image = obj.OriginalImage;
                     obj.OriginalImage = null;
                     revertedCount++;
@@ -1712,7 +1745,7 @@ var settings = GetAISettingsFromPanel();
                 targets = new List<PlacedObject>(placedObjects);
 
             var groups = targets
-                .Where(o => o != null && o.Image != null && !string.IsNullOrWhiteSpace(o.GraphicId))
+                .Where(o => o != null && IsImageAlive(o.Image) && !string.IsNullOrWhiteSpace(o.GraphicId))
                 .GroupBy(o => o.GraphicId.Trim().ToUpperInvariant())
                 .Where(g => g.Count() > 1)
                 .ToList();
@@ -1729,8 +1762,11 @@ var settings = GetAISettingsFromPanel();
                 var variants = new List<UnifyVariant>();
                 foreach (var m in members)
                 {
-                    if (m.Image == null) continue;
-                    var bmp = m.Image as Bitmap ?? new Bitmap(m.Image);
+                    // TryCloneImage returns null for null/disposed/zero-size
+                    // sources (disposed GDI+ images throw ArgumentException on
+                    // Width) -- skip corpses instead of crashing.
+                    var bmp = TryCloneImage(m.Image);
+                    if (bmp == null) continue;
                     bool dup = false;
                     foreach (var v in variants)
                     {
@@ -1746,6 +1782,10 @@ var settings = GetAISettingsFromPanel();
                 {
                     foreach (var s in stash)
                     {
+                        // Stash entries may have been disposed upstream (or the
+                        // art cache corpse they alias); skip dead ones so the
+                        // dialog never touches a disposed Width.
+                        if (!IsImageAlive(s)) continue;
                         bool dup = false;
                         foreach (var v in variants)
                         {
@@ -1768,8 +1808,10 @@ var settings = GetAISettingsFromPanel();
                 int bestScore = -1;
                 for (int i = 0; i < variants.Count; i++)
                 {
-                    int score = (variants[i].IsRegen ? 1000000000 : 0)
-                        + variants[i].Image.Width * variants[i].Image.Height;
+                    int w = 0, h = 0;
+                    try { w = variants[i].Image.Width; h = variants[i].Image.Height; }
+                    catch { w = 0; h = 0; }
+                    int score = (variants[i].IsRegen ? 1000000000 : 0) + w * h;
                     if (score > bestScore) { bestScore = score; def = i; }
                 }
 
@@ -1809,19 +1851,95 @@ var settings = GetAISettingsFromPanel();
             {
                 string key = pg.GraphicId.Trim().ToUpperInvariant();
                 Bitmap chosen;
-                if (!chosenById.TryGetValue(pg.GraphicId, out chosen) || chosen == null)
-                    chosen = pg.Variants[pg.DefaultIndex].Image;
+                if (!chosenById.TryGetValue(pg.GraphicId, out chosen) || !IsImageAlive(chosen))
+                {
+                    // Dialog choice missing or disposed upstream: fall back to
+                    // the first usable variant instead of crashing on Width.
+                    chosen = pg.Variants.Where(v => IsImageAlive(v.Image))
+                        .Select(v => v.Image)
+                        .FirstOrDefault();
+                    if (chosen == null)
+                    {
+                        outputTextBox.AppendText(string.Format("Unified {0}: skipped, no usable artwork\r\n", pg.GraphicId));
+                        unifyCandidates[key] = new List<Bitmap>();
+                        continue;
+                    }
+                }
+                int chosenW = 0, chosenH = 0;
+                try { chosenW = chosen.Width; chosenH = chosen.Height; }
+                catch { continue; }
 
                 var members = groups.First(gr => gr.Key == key).ToList();
+                // Snapshot each member's size BEFORE disposing anything: members
+                // with the same ID often share one cached Image instance, so
+                // disposing the first member's Image would turn every sibling's
+                // Width access into ArgumentException ("Parameter is not valid").
+                var sizes = new Dictionary<PlacedObject, Tuple<int, int>>();
                 foreach (var obj in members)
                 {
-                    int w = obj.Image.Width;
-                    int h = obj.Image.Height;
-                    obj.Image?.Dispose();
-                    if (w == chosen.Width && h == chosen.Height)
-                        obj.Image = new Bitmap(chosen);
+                    try
+                    {
+                        if (obj.Image == null) continue;
+                        int w = obj.Image.Width, h = obj.Image.Height;
+                        if (w > 0 && h > 0) sizes[obj] = Tuple.Create(w, h);
+                    }
+                    catch { /* disposed corpse: handled below */ }
+                }
+                // Dispose each distinct instance once (shared instances must
+                // not be disposed twice; unusable corpses are just detached).
+                // Never dispose an image the dialog still needs (the winner or
+                // a stashed variant), nor one still held by a non-member object
+                // (selection-subset unify): that would plant a disposed corpse
+                // behind a live PlacedObject or poison the shared art cache.
+                var variantImages = new HashSet<Image>(pg.Variants.Where(v => v.Image != null).Select(v => v.Image));
+                variantImages.Add(chosen);
+                var holders = new Dictionary<Image, int>();
+                foreach (var o in placedObjects)
+                {
+                    if (o == null || o.Image == null) continue;
+                    int n;
+                    holders.TryGetValue(o.Image, out n);
+                    holders[o.Image] = n + 1;
+                }
+                var memberHoldCount = new Dictionary<Image, int>();
+                foreach (var obj in members)
+                {
+                    if (obj.Image == null) continue;
+                    int n;
+                    memberHoldCount.TryGetValue(obj.Image, out n);
+                    memberHoldCount[obj.Image] = n + 1;
+                }
+                var disposed = new HashSet<Image>();
+                foreach (var obj in members)
+                {
+                    Tuple<int, int> wh;
+                    int w, h;
+                    if (sizes.TryGetValue(obj, out wh)) { w = wh.Item1; h = wh.Item2; }
+                    else { w = chosenW; h = chosenH; }
+                    // Clone BEFORE detaching: if the clone fails, the member
+                    // keeps its current image instead of ending up null.
+                    Bitmap src;
+                    try { src = new Bitmap(chosen); }
+                    catch { continue; }
+                    Bitmap finalBmp;
+                    if (w == chosenW && h == chosenH)
+                        finalBmp = src;
                     else
-                        obj.Image = ResizeToExact(new Bitmap(chosen), w, h);
+                    {
+                        finalBmp = ResizeToExact(src, w, h);
+                        if (!ReferenceEquals(finalBmp, src)) { try { src.Dispose(); } catch { } }
+                    }
+                    var old = obj.Image;
+                    obj.Image = finalBmp;
+                    if (old == null || disposed.Contains(old) || variantImages.Contains(old))
+                        continue;
+                    int total = 0, mine = 0;
+                    holders.TryGetValue(old, out total);
+                    memberHoldCount.TryGetValue(old, out mine);
+                    if (total > mine)
+                        continue; // still held outside this group: leave it
+                    disposed.Add(old);
+                    try { old.Dispose(); } catch { }
                     unifiedObjects++;
                 }
                 unifiedIds++;
@@ -1830,10 +1948,13 @@ var settings = GetAISettingsFromPanel();
                 // Keep Save in sync: one art per ID, matching the canvas.
                 int gidVal;
                 if (TryParseGraphicId(pg.GraphicId, out gidVal))
-                    MarkArtModified(gidVal, new Bitmap(chosen));
+                {
+                    Bitmap savable = TryCloneImage(chosen);
+                    if (savable != null) MarkArtModified(gidVal, savable);
+                }
 
                 // Stash all variants (including the winner) for future swaps.
-                unifyCandidates[key] = working[key].Select(v => v.Image).ToList();
+                unifyCandidates[key] = working[key].Select(v => v.Image).Where(b => IsImageAlive(b)).ToList();
             }
 
             designPictureBox.Invalidate();
@@ -1848,7 +1969,11 @@ var settings = GetAISettingsFromPanel();
         {
             if (ReferenceEquals(a, b)) return true;
             if (a == null || b == null) return false;
-            if (a.Width != b.Width || a.Height != b.Height) return false;
+            try
+            {
+                if (a.Width != b.Width || a.Height != b.Height) return false;
+            }
+            catch { return false; }
             Bitmap ba = a as Bitmap;
             Bitmap bb = b as Bitmap;
             bool dispA = false;

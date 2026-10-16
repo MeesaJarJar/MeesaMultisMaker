@@ -996,7 +996,9 @@ namespace MeesaMultisMaker
                 DropDownWidth = 300
             };
             checkpointComboBox.Items.Add(MeesaMultisMaker.ComfyUI.Text2ImageWorkflow.DEFAULT_CHECKPOINT);
+            checkpointComboBox.Items.Add(MeesaMultisMaker.ComfyUI.Flux2KleinWorkflow.KLEIN_DISPLAY_NAME);
             checkpointComboBox.SelectedIndex = 0;
+            checkpointComboBox.SelectedIndexChanged += CheckpointComboBox_SelectedIndexChanged;
             HolographicTheme.ApplyToComboBox(checkpointComboBox);
             comfySettingsPanel.Controls.Add(checkpointComboBox);
 
@@ -1783,6 +1785,10 @@ namespace MeesaMultisMaker
                         checkpointComboBox.Items.Add(cp);
                     }
 
+                    // Klein is a virtual engine entry, not a server checkpoint - always keep it listed.
+                    if (checkpointComboBox.Items.IndexOf(MeesaMultisMaker.ComfyUI.Flux2KleinWorkflow.KLEIN_DISPLAY_NAME) < 0)
+                        checkpointComboBox.Items.Add(MeesaMultisMaker.ComfyUI.Flux2KleinWorkflow.KLEIN_DISPLAY_NAME);
+
                     // Try to restore selection
                     if (!string.IsNullOrEmpty(currentSelection))
                     {
@@ -1816,6 +1822,24 @@ namespace MeesaMultisMaker
             {
                 if (refreshCheckpointsButton != null)
                     refreshCheckpointsButton.Enabled = true;
+            }
+        }
+
+        private void CheckpointComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            // When Klein is selected, snap steps/CFG/sampler to the baseline user
+            // workflow values (4 steps / cfg 1.0, no denoise input).
+            // Switching back to an SD checkpoint leaves the controls untouched.
+            if (checkpointComboBox == null) return;
+            if (!MeesaMultisMaker.ComfyUI.Flux2KleinWorkflow.IsKlein(checkpointComboBox.SelectedItem?.ToString())) return;
+            if (stepsNumeric != null)
+                stepsNumeric.Value = Math.Max(stepsNumeric.Minimum, Math.Min(stepsNumeric.Maximum, MeesaMultisMaker.ComfyUI.Flux2KleinWorkflow.KLEIN_STEPS));
+            if (cfgNumeric != null)
+                cfgNumeric.Value = Math.Max(cfgNumeric.Minimum, Math.Min(cfgNumeric.Maximum, (decimal)MeesaMultisMaker.ComfyUI.Flux2KleinWorkflow.KLEIN_CFG));
+            if (samplerComboBox != null)
+            {
+                int idx = samplerComboBox.Items.IndexOf("euler");
+                if (idx >= 0) samplerComboBox.SelectedIndex = idx;
             }
         }
 

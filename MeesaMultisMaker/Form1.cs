@@ -1010,7 +1010,8 @@ namespace MeesaMultisMaker
                 Denoise = _aiSettingsPanel.Denoise,
                 Seed = _aiSettingsPanel.Seed,
                 Sampler = _aiSettingsPanel.Sampler,
-                Scheduler = _aiSettingsPanel.Scheduler
+                Scheduler = _aiSettingsPanel.Scheduler,
+                Checkpoint = _aiSettingsPanel.Checkpoint
             };
         }
 
@@ -1064,21 +1065,36 @@ namespace MeesaMultisMaker
 
         private void OnDesignPictureBox_DragEnter(object sender, DragEventArgs e)
         {
-            e.Effect = e.Data.GetDataPresent(DataFormats.Bitmap) ? DragDropEffects.Copy : DragDropEffects.None;
+            // Internal palette drags keep working exactly as before.
+            if (e.Data.GetDataPresent(DataFormats.Bitmap))
+            {
+                e.Effect = DragDropEffects.Copy;
+                return;
+            }
+            // Explorer file drops: allow only when at least one file has a
+            // supported image extension.
+            if (e.Data.GetDataPresent(DataFormats.FileDrop) && HasSupportedDropImageFile(e.Data))
+            {
+                e.Effect = DragDropEffects.Copy;
+                return;
+            }
+            e.Effect = DragDropEffects.None;
         }
 
         private void OnDesignPictureBox_DragDrop(object sender, DragEventArgs e)
         {
-            if (!e.Data.GetDataPresent(DataFormats.Bitmap)) return;
-            PushUndo();
+            // Internal palette drags take precedence over Explorer file drops.
+            if (e.Data.GetDataPresent(DataFormats.Bitmap))
+            {
+                PushUndo();
 
-            Point pt = designPictureBox.PointToClient(new Point(e.X, e.Y));
-            Point gridPos = IsoToGrid(pt.X, pt.Y);
-            gridPos.X = Math.Max(0, Math.Min(gridWidth - 1, gridPos.X));
-            gridPos.Y = Math.Max(0, Math.Min(gridHeight - 1, gridPos.Y));
+                Point pt = designPictureBox.PointToClient(new Point(e.X, e.Y));
+                Point gridPos = IsoToGrid(pt.X, pt.Y);
+                gridPos.X = Math.Max(0, Math.Min(gridWidth - 1, gridPos.X));
+                gridPos.Y = Math.Max(0, Math.Min(gridHeight - 1, gridPos.Y));
 
-            // Check for multi-item drag
-            var multiIds = e.Data.GetData("MultiItemIds") as ushort[];
+                // Check for multi-item drag
+                var multiIds = e.Data.GetData("MultiItemIds") as ushort[];
             if (multiIds != null && multiIds.Length > 1)
             {
                 // Arrange items in a grid pattern centered on the drop position
@@ -1132,8 +1148,190 @@ namespace MeesaMultisMaker
                 });
             }
 
+                RebuildLockLists();
+                designPictureBox.Invalidate();
+                return;
+            }
+
+            // Explorer file drops (no internal Bitmap payload present).
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                HandleExplorerImageFileDrop(e);
+            }
+        }
+
+        /// <summary>
+        /// True for the Explorer drag-and-drop artwork extensions:
+        /// png/jpg/jpeg/bmp/tif/tiff (case-insensitive).
+        /// </summary>
+        private static bool IsSupportedDropImageFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            string ext;
+            try { ext = Path.GetExtension(path); }
+            catch { return false; }
+            if (string.IsNullOrEmpty(ext)) return false;
+            switch (ext.ToLowerInvariant())
+            {
+                case ".png":
+                case ".jpg":
+                case ".jpeg":
+                case ".bmp":
+                case ".tif":
+                case ".tiff":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool HasSupportedDropImageFile(IDataObject data)
+        {
+            try
+            {
+                var files = data.GetData(DataFormats.FileDrop) as string[];
+                if (files == null || files.Length == 0) return false;
+                foreach (var f in files)
+                {
+                    if (IsSupportedDropImageFile(f)) return true;
+                }
+                return false;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Returns a placeholder GraphicId that cannot collide with real hex
+        /// art IDs (contains '_' so TryParseGraphicId always fails) nor with
+        /// any GraphicId already on the canvas. Monotonic counter, skips used
+        /// values.
+        /// </summary>
+        private string GetUniqueDropPlaceholderId()
+        {
+            HashSet<string> used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var o in placedObjects)
+            {
+                if (o != null && !string.IsNullOrEmpty(o.GraphicId))
+                    used.Add(o.GraphicId);
+            }
+            string id;
+            do
+            {
+                id = "drop_" + _dropPlaceholderCounter++;
+            } while (used.Contains(id));
+            return id;
+        }
+
+        /// <summary>
+        /// Adds Explorer-dropped image files as new canvas artwork (ADD, never
+        /// replace). One PlacedObject per loadable image at original pixel
+        /// size (Z=0, Flags=1), grid-arranged around the drop point with
+        /// cols=Ceil(Sqrt(n)). Failed/missing/unsupported files never create
+        /// objects. PushUndo runs ONCE and only when at least one image
+        /// loaded. Full success writes a status line only; partial success
+        /// also shows a MessageBox with imported + skipped counts.
+        /// </summary>
+        private void HandleExplorerImageFileDrop(DragEventArgs e)
+        {
+            string[] files;
+            try { files = e.Data.GetData(DataFormats.FileDrop) as string[]; }
+            catch { return; }
+            if (files == null || files.Length == 0) return;
+
+            var loaded = new List<Image>();
+            int skipped = 0;
+            foreach (var path in files)
+            {
+                if (!IsSupportedDropImageFile(path)) { skipped++; continue; }
+                if (!File.Exists(path)) { skipped++; continue; }
+                Image img = null;
+                try { img = LoadImageUnlocked(path); }
+                catch { img = null; }
+                if (img == null) { skipped++; continue; }
+                try
+                {
+                    int w = img.Width;
+                    int h = img.Height;
+                    if (w <= 0 || h <= 0)
+                    {
+                        try { img.Dispose(); } catch { }
+                        skipped++;
+                        continue;
+                    }
+                }
+                catch
+                {
+                    try { img.Dispose(); } catch { }
+                    skipped++;
+                    continue;
+                }
+                loaded.Add(img);
+            }
+
+            if (loaded.Count == 0)
+            {
+                string noneMsg = skipped > 0
+                    ? "No images imported. Skipped " + skipped + " file(s): unsupported, missing, or unloadable."
+                    : "No images imported.";
+                try { outputTextBox.AppendText(noneMsg + "\r\n"); } catch { }
+                if (skipped > 0)
+                {
+                    MessageBox.Show(this, noneMsg, "Import Images",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                return;
+            }
+
+            PushUndo();
+
+            Point pt = designPictureBox.PointToClient(new Point(e.X, e.Y));
+            Point gridPos = IsoToGrid(pt.X, pt.Y);
+            gridPos.X = Math.Max(0, Math.Min(gridWidth - 1, gridPos.X));
+            gridPos.Y = Math.Max(0, Math.Min(gridHeight - 1, gridPos.Y));
+
+            int cols = (int)Math.Ceiling(Math.Sqrt(loaded.Count));
+            int startX = gridPos.X - cols / 2;
+            int startY = gridPos.Y - cols / 2;
+
+            for (int i = 0; i < loaded.Count; i++)
+            {
+                int gx = startX + (i % cols);
+                int gy = startY + (i / cols);
+                gx = Math.Max(0, Math.Min(gridWidth - 1, gx));
+                gy = Math.Max(0, Math.Min(gridHeight - 1, gy));
+
+                Image img = loaded[i];
+                if (img == null) continue;
+                Point isoPos = GridToIso(gx, gy);
+                string gid = GetUniqueDropPlaceholderId();
+                placedObjects.Add(new PlacedObject
+                {
+                    Image = img,
+                    GraphicId = gid,
+                    GridX = gx,
+                    GridY = gy,
+                    Z = 0,
+                    Flags = 1,
+                    IsoPosition = isoPos,
+                    Layer = placedObjects.Count
+                });
+            }
+
             RebuildLockLists();
             designPictureBox.Invalidate();
+
+            string status = loaded.Count == 1
+                ? "Imported 1 image from Explorer"
+                : "Imported " + loaded.Count + " images from Explorer";
+            if (skipped > 0) status += ", skipped " + skipped + " file(s)";
+            status += ".";
+            try { outputTextBox.AppendText(status + "\r\n"); } catch { }
+            if (skipped > 0)
+            {
+                MessageBox.Show(this,
+                    "Imported " + loaded.Count + " image(s).\r\nSkipped " + skipped + " file(s): unsupported, missing, or unloadable.",
+                    "Import Images", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private bool EnsureLicenseAccepted()

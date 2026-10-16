@@ -986,6 +986,7 @@ namespace MeesaMultisMaker.Controls
             checkpointBox.Items.AddRange(GetCheckpointOptions());
             checkpointBox.SelectedIndex = 0;
             checkpointBox.DropDownWidth = 300;
+            checkpointBox.SelectedIndexChanged += (s, e) => ApplyKleinPresetOnSelect();
             panelTooltip.SetToolTip(checkpointBox, "AI model checkpoint to use for generation");
             contentPanel.Controls.Add(checkpointBox);
             
@@ -1918,8 +1919,9 @@ namespace MeesaMultisMaker.Controls
         /// </summary>
         private object[] GetCheckpointOptions()
         {
-            // Default checkpoints - will be populated when RefreshCheckpoints is called
-            return new object[] { Text2ImageWorkflow.DEFAULT_CHECKPOINT };
+            // Default checkpoints - will be populated when RefreshCheckpoints is called.
+            // Klein is always listed alongside SD checkpoints.
+            return new object[] { Text2ImageWorkflow.DEFAULT_CHECKPOINT, Flux2KleinWorkflow.KLEIN_DISPLAY_NAME };
         }
 
         /// <summary>
@@ -1949,6 +1951,28 @@ namespace MeesaMultisMaker.Controls
             }
         }
 
+        /// <summary>
+        /// When Klein is selected, snap steps/CFG/sampler to its required values.
+        /// This panel only drives img2img regen flows; Klein reference-edit
+        /// img2img is fixed at 4 steps / cfg 1.0 per the baseline user workflow
+        /// (no denoise input, no min-8 logic). Switching back to an SD
+        /// checkpoint leaves the controls untouched.
+        /// </summary>
+        private void ApplyKleinPresetOnSelect()
+        {
+            if (checkpointBox == null) return;
+            if (!Flux2KleinWorkflow.IsKlein(checkpointBox.SelectedItem?.ToString())) return;
+            if (stepsUpDown != null)
+                stepsUpDown.Value = Math.Max(stepsUpDown.Minimum, Math.Min(stepsUpDown.Maximum, Flux2KleinWorkflow.KLEIN_STEPS));
+            if (cfgUpDown != null)
+                cfgUpDown.Value = Math.Max(cfgUpDown.Minimum, Math.Min(cfgUpDown.Maximum, (decimal)Flux2KleinWorkflow.KLEIN_CFG));
+            if (samplerBox != null)
+            {
+                int idx = samplerBox.Items.IndexOf("euler");
+                if (idx >= 0) samplerBox.SelectedIndex = idx;
+            }
+        }
+
         private void UpdateCheckpointList(List<string> checkpoints)
         {
             if (checkpoints == null || checkpoints.Count == 0) return;
@@ -1960,6 +1984,10 @@ namespace MeesaMultisMaker.Controls
             {
                 checkpointBox.Items.Add(cp);
             }
+
+            // Klein is a virtual engine entry, not a server checkpoint - always keep it listed.
+            if (checkpointBox.Items.IndexOf(Flux2KleinWorkflow.KLEIN_DISPLAY_NAME) < 0)
+                checkpointBox.Items.Add(Flux2KleinWorkflow.KLEIN_DISPLAY_NAME);
 
             // Try to restore selection
             if (!string.IsNullOrEmpty(currentSelection))

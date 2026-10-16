@@ -485,10 +485,15 @@ namespace MeesaMultisMaker
                 ? "high quality terrain texture, isometric game tiles, detailed, seamless"
                 : Prompt;
 
-            var workflow = InpaintWorkflow.CreateWorkflow(
-                prompt, NegativePrompt, uploadedImageName, uploadedMaskName,
-                targetWidth, targetHeight, Steps, CFG, Denoise, Seed, Sampler, Scheduler, Checkpoint
-            );
+            var workflow = Flux2KleinWorkflow.IsKlein(Checkpoint)
+                ? Flux2KleinInpaintWorkflow.CreateWorkflow(
+                    prompt, NegativePrompt, uploadedImageName, uploadedMaskName,
+                    targetWidth, targetHeight, Steps, CFG, Seed, Sampler)
+                : InpaintWorkflow.CreateWorkflow(
+                    prompt, NegativePrompt, uploadedImageName, uploadedMaskName,
+                    targetWidth, targetHeight, Steps, CFG, Denoise, Seed, Sampler, Scheduler,
+                    Checkpoint
+                );
 
             var promptId = await comfyClient.QueuePrompt(workflow);
             if (string.IsNullOrEmpty(promptId))
@@ -571,19 +576,29 @@ namespace MeesaMultisMaker
                 var comfyClient = new ComfyUIClient(ComfyUIUrl);
                 string uploadedFilename = await comfyClient.UploadImage(imageBytes, $"tile_{tileId}.png");
 
-                string workflow = ComfyUI.Image2ImageWorkflow.CreateWorkflow(
-                    fullPrompt,
-                    NegativePrompt,
-                    uploadedFilename,
-                    targetWidth,
-                    targetHeight,
-                    Steps,
-                    CFG,
-                    Denoise,
-                    Seed,
-                    Sampler,
-                    Scheduler
-                );
+                string workflow = Flux2KleinWorkflow.IsKlein(Checkpoint)
+                    ? Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                        fullPrompt,
+                        NegativePrompt,
+                        uploadedFilename,
+                        targetWidth,
+                        targetHeight,
+                        Seed,
+                        Sampler)
+                    : ComfyUI.Image2ImageWorkflow.CreateWorkflow(
+                        fullPrompt,
+                        NegativePrompt,
+                        uploadedFilename,
+                        targetWidth,
+                        targetHeight,
+                        Steps,
+                        CFG,
+                        Denoise,
+                        Seed,
+                        Sampler,
+                        Scheduler,
+                        Checkpoint
+                    );
 
                 string promptId = await comfyClient.QueuePrompt(workflow);
                 if (string.IsNullOrEmpty(promptId))
@@ -2762,9 +2777,21 @@ try
 
                 double effectiveDenoise = Denoise;
 
-                // Create workflow - use ControlNet if enabled
+                // Create workflow - use ControlNet if enabled (SD only; Klein has no ControlNet path).
                 string workflow;
-                if (UseControlNet)
+                if (Flux2KleinWorkflow.IsKlein(Checkpoint))
+                {
+                    workflow = Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                        fullPrompt,
+                        NegativePrompt,
+                        uploadedFilename,
+                        targetWidth,
+                        targetHeight,
+                        Seed,
+                        Sampler
+                    );
+                }
+                else if (UseControlNet)
                 {
                     var config = AppConfig.Instance;
                     workflow = ControlNetDepthWorkflow.CreateWorkflow(
@@ -3115,10 +3142,15 @@ try
                     }
 
                     var uploadedName = await comfyClient.UploadImage(imageBytes, "statics_composite.png");
-                    var workflow = ComfyUI.Image2ImageWorkflow.CreateWorkflow(
-                        prompt, NegativePrompt, uploadedName,
-                        targetWidth, targetHeight, Steps, CFG, Denoise, Seed,
-                        Sampler, Scheduler);
+                    var workflow = Flux2KleinWorkflow.IsKlein(Checkpoint)
+                        ? Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                            prompt, NegativePrompt, uploadedName,
+                            targetWidth, targetHeight, Seed,
+                            Sampler)
+                        : ComfyUI.Image2ImageWorkflow.CreateWorkflow(
+                            prompt, NegativePrompt, uploadedName,
+                            targetWidth, targetHeight, Steps, CFG, Denoise, Seed,
+                            Sampler, Scheduler, Checkpoint);
 
                     var promptId = await comfyClient.QueuePrompt(workflow);
                     if (string.IsNullOrEmpty(promptId))

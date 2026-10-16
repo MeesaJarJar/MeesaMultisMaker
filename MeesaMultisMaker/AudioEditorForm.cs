@@ -532,7 +532,7 @@ namespace MeesaMultisMaker
             waveform = new WaveformBox { Dock = DockStyle.Fill };
             right.Controls.Add(waveform);
 
-            var transport = new Panel { Dock = DockStyle.Bottom, Height = 398 };
+            var transport = new Panel { Dock = DockStyle.Bottom, Height = 514 };
             right.Controls.Add(transport);
             int ty = 6;
 
@@ -620,12 +620,24 @@ namespace MeesaMultisMaker
             mulSlotNum = MkNumT(transport, 590, ty, 0, 4094, 1, 0, 0);
             mulSlotNum.ValueChanged += MulSlotNum_Changed;
             ty += 26;
-            mulSlotList = new ListBox { Location = new Point(6, ty), Width = 330, Height = 56 };
+            transport.Controls.Add(MakeLabel("Filter:", 6, ty + 4, 40, 20));
+            _slotFilterBox = new TextBox { Location = new Point(50, ty), Width = 280, Height = 20 };
+            _slotFilterBox.TextChanged += MulSlotFilter_Changed;
+            transport.Controls.Add(_slotFilterBox);
+            try
+            {
+                var ftip = new ToolTip { ShowAlways = true };
+                ftip.SetToolTip(_slotFilterBox, "Filter the slot list by id, hex, name or caption.");
+            }
+            catch { }
+            ty += 24;
+            mulSlotList = new ListBox { Location = new Point(6, ty), Width = 330, Height = 120 };
             mulSlotList.SelectedIndexChanged += MulSlotList_SelectedIndexChanged;
+            mulSlotList.DoubleClick += SlotPlay_Click;
             transport.Controls.Add(mulSlotList);
             mulInfoLabel = MakeLabel("No sounds loaded.", 342, ty + 4, 270, 40);
             transport.Controls.Add(mulInfoLabel);
-            ty += 60;
+            ty += 124;
             var bSlotPlay = MkBtnT(transport, "Play slot", 6, ty, 80);
             bSlotPlay.Click += SlotPlay_Click;
             var bToSlot = MkBtnT(transport, "Clip -> slot", 92, ty, 90);
@@ -634,11 +646,18 @@ namespace MeesaMultisMaker
             _saveMulBtn.Click += SaveMul_Click;
             var bFitSlot = MkBtnT(transport, "Fit clip to slot", 284, ty, 110);
             bFitSlot.Click += FitClipToSlot_Click;
+            ty += 28;
+            var bGenSlot = MkBtnT(transport, "Gen for slot", 6, ty, 100);
+            bGenSlot.Click += GenSlot_Click;
+            var bReplaceAll = MkBtnT(transport, "Replace all...", 112, ty, 110);
+            bReplaceAll.Click += ReplaceAll_Click;
             try
             {
                 var tip2 = new ToolTip { ShowAlways = true };
                 tip2.SetToolTip(bToSlot, "Write the loaded clip into the slot. Legacy pair: staged in memory until Save MULs. UOP: writes immediately (with .bak backup).");
                 tip2.SetToolTip(bFitSlot, "Resample to 22050 mono and pad/trim to the slot's exact byte length first (UOP slots are fixed-size).");
+                tip2.SetToolTip(bGenSlot, "Generate a replacement for this slot (prompt from its caption, duration matched) and stage it automatically on arrival.");
+                tip2.SetToolTip(bReplaceAll, "Replace every slot from a folder of 0xHEX.wav files (e.g. the generated set). One confirmation, progress in the log.");
             }
             catch { }
             ty += 28;
@@ -1947,61 +1966,7 @@ namespace MeesaMultisMaker
                     return;
                 }
                 int id = (int)mulSlotNum.Value;
-                string folder = mulFolderBox.Text.Trim();
-                if (_mulBackend == MulBackend.Uop)
-                {
-                    var target = FindSlotView(id);
-                    if (target == null || target.Pcm == null)
-                    {
-                        MessageBox.Show(this, "UOP slots are fixed-size: pick an existing slot.", "Audio Editor");
-                        return;
-                    }
-                    int slotFrames = target.Pcm.Length / 2;
-                    var work = _wave.Clone();
-                    work.ToMono();
-                    work.Resample(22050);
-                    work.Normalize(0.98f);
-                    bool padded = work.FitToFrames(slotFrames);
-                    if (padded) Log("Clip padded with silence to fit slot " + id + ".");
-                    var exact = new byte[slotFrames * 2];
-                    for (int i = 0; i < work.Samples.Length && i < slotFrames; i++)
-                    {
-                        double v = work.Samples[i];
-                        if (v > 1) v = 1;
-                        else if (v < -1) v = -1;
-                        short sh = (short)Math.Round(v * 32767.0);
-                        exact[i * 2] = (byte)(sh & 0xFF);
-                        exact[i * 2 + 1] = (byte)((sh >> 8) & 0xFF);
-                    }
-                    if (MessageBox.Show(this,
-                        "Overwrite slot " + id + " in " + SoundUopReader.SOUND_UOP_FILENAME +
-                        " now? The file is backed up to .bak (first write only).",
-                        "Audio Editor", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                        return;
-                    SoundUopReader.ReplacePcm(folder, id, exact);
-                    target.Pcm = (byte[])exact.Clone();
-                    RefreshMulInfo();
-                    RefreshMulSlotList(id);
-                    Log("Wrote clip into UOP slot " + id + ".");
-                    SetStatus("Slot " + id + " replaced.", Color.Green);
-                    return;
-                }
-                string name = _clip != null ? Path.GetFileNameWithoutExtension(_clip.Name) : "custom";
-                _sounds.Replace(id, _wave, name);
-                _mulDirty = true;
-                // Mirror into the browser views.
-                var staged = _sounds.GetSlot(id);
-                var view = FindSlotView(id);
-                if (staged != null)
-                {
-                    if (view == null) { view = new MulSlotView { Id = id }; _slotViews.Add(view); }
-                    view.Name = staged.Name;
-                    view.Pcm = staged.Pcm;
-                    RefreshMulSlotList(id);
-                    RefreshMulInfo();
-                }
-                Log("Staged clip into slot " + id + " (memory). Save MULs to write.");
-                SetStatus("Staged to slot " + id + ".", Color.Green);
+                StageCurrentWaveToSlot(id, false);
             }
             catch (Exception ex) { MessageBox.Show(this, "Stage failed:\r\n" + ex.Message, "Audio Editor"); }
         }
@@ -2034,15 +1999,19 @@ namespace MeesaMultisMaker
             try
             {
                 if (mulSlotList == null) return;
+                EnsureSlotCaptions();
                 var sorted = new List<MulSlotView>(_slotViews);
                 sorted.Sort((a, b) => a.Id.CompareTo(b.Id));
                 mulSlotList.BeginUpdate();
                 mulSlotList.Items.Clear();
                 int sel = -1;
+                int shown = 0;
                 for (int k = 0; k < sorted.Count; k++)
                 {
-                    mulSlotList.Items.Add(sorted[k].Label);
-                    if (sorted[k].Id == selectId) sel = k;
+                    if (!SlotPassesFilter(sorted[k])) continue;
+                    mulSlotList.Items.Add(BuildSlotLabel(sorted[k]));
+                    if (sorted[k].Id == selectId) sel = shown;
+                    shown++;
                 }
                 mulSlotList.EndUpdate();
                 if (sel >= 0) mulSlotList.SelectedIndex = sel;
@@ -2716,6 +2685,21 @@ namespace MeesaMultisMaker
                                 clipListBox.SelectedIndex = _clips.Count - 1;
                             }
                         }
+                        int autoSlot = _runSlotStage;
+                        if (autoSlot >= 0 && !wasRadio)
+                        {
+                            _runSlotStage = -1;
+                            try
+                            {
+                                if (_clips.Count > 0)
+                                {
+                                    LoadClipToWaveform(_clips[_clips.Count - 1]);
+                                    StageCurrentWaveToSlot(autoSlot, true);
+                                    Log("Auto-staged generation into slot " + autoSlot + ".");
+                                }
+                            }
+                            catch (Exception ex2) { Log("Auto-stage to slot " + autoSlot + " failed: " + ex2.Message); }
+                        }
                         // Library: every finished generation, with its
                         // prompt, seed, workflow and file -- silent by
                         // design, the Library tab reads it back.
@@ -2739,9 +2723,10 @@ namespace MeesaMultisMaker
                 });
                 SetStatus("Done.", Color.Green);
             }
-            catch (OperationCanceledException) { SetStatus("Cancelled.", Color.Orange); Log("Cancelled by user."); }
+            catch (OperationCanceledException) { _runSlotStage = -1; SetStatus("Cancelled.", Color.Orange); Log("Cancelled by user."); }
             catch (Exception ex)
             {
+                _runSlotStage = -1;
                 SetStatus("Error: " + ex.Message, Color.Red);
                 Log("ERROR: " + ex.Message);
                 if (_radioRun)

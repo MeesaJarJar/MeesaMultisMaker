@@ -215,19 +215,30 @@ namespace MeesaMultisMaker
                     long effSeed = aiSettingsPanel.Seed ?? new Random().Next();
                     SetStatus($"Generating with seed {effSeed}...");
 
-                    string workflow = Image2ImageWorkflow.CreateWorkflow(
-                        aiSettingsPanel.Prompt,
-                        aiSettingsPanel.NegativePrompt,
-                        uploadedFilename,
-                        aiWidth, aiHeight,
-                        aiSettingsPanel.Steps,
-                        aiSettingsPanel.Cfg,
-                        aiSettingsPanel.Denoise,
-                        effSeed,
-                        aiSettingsPanel.Sampler,
-                        aiSettingsPanel.Scheduler,
-                        aiSettingsPanel.Checkpoint
-                    );
+                    string workflow;
+                    if (Flux2KleinWorkflow.IsKlein(aiSettingsPanel.Checkpoint))
+                        workflow = Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                            aiSettingsPanel.Prompt,
+                            aiSettingsPanel.NegativePrompt,
+                            uploadedFilename,
+                            aiWidth, aiHeight,
+                            effSeed,
+                            aiSettingsPanel.Sampler
+                        );
+                    else
+                        workflow = Image2ImageWorkflow.CreateWorkflow(
+                            aiSettingsPanel.Prompt,
+                            aiSettingsPanel.NegativePrompt,
+                            uploadedFilename,
+                            aiWidth, aiHeight,
+                            aiSettingsPanel.Steps,
+                            aiSettingsPanel.Cfg,
+                            aiSettingsPanel.Denoise,
+                            effSeed,
+                            aiSettingsPanel.Sampler,
+                            aiSettingsPanel.Scheduler,
+                            aiSettingsPanel.Checkpoint
+                        );
 
                     string promptId = await _comfyClient.QueuePrompt(workflow);
                     if (string.IsNullOrEmpty(promptId))
@@ -485,19 +496,30 @@ namespace MeesaMultisMaker
                     long effSeed = aiSettingsPanel.Seed ?? new Random().Next();
                     SetStatus($"Generating {selectedGumps.Count} GUMPs with seed {effSeed}...");
 
-                    string workflow = Image2ImageWorkflow.CreateWorkflow(
-                        aiSettingsPanel.Prompt,
-                        aiSettingsPanel.NegativePrompt,
-                        uploadedFilename,
-                        aiWidth, aiHeight,
-                        aiSettingsPanel.Steps,
-                        aiSettingsPanel.Cfg,
-                        aiSettingsPanel.Denoise,
-                        effSeed,
-                        aiSettingsPanel.Sampler,
-                        aiSettingsPanel.Scheduler,
-                        aiSettingsPanel.Checkpoint
-                    );
+                    string workflow;
+                    if (Flux2KleinWorkflow.IsKlein(aiSettingsPanel.Checkpoint))
+                        workflow = Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                            aiSettingsPanel.Prompt,
+                            aiSettingsPanel.NegativePrompt,
+                            uploadedFilename,
+                            aiWidth, aiHeight,
+                            effSeed,
+                            aiSettingsPanel.Sampler
+                        );
+                    else
+                        workflow = Image2ImageWorkflow.CreateWorkflow(
+                            aiSettingsPanel.Prompt,
+                            aiSettingsPanel.NegativePrompt,
+                            uploadedFilename,
+                            aiWidth, aiHeight,
+                            aiSettingsPanel.Steps,
+                            aiSettingsPanel.Cfg,
+                            aiSettingsPanel.Denoise,
+                            effSeed,
+                            aiSettingsPanel.Sampler,
+                            aiSettingsPanel.Scheduler,
+                            aiSettingsPanel.Checkpoint
+                        );
 
                     SetStatus("Queuing AI generation...");
                     aiSettingsPanel.SetStatus("Queuing...", HolographicTheme.CyanAccent);

@@ -60,8 +60,17 @@ namespace MeesaMultisMaker.ComfyUI
                     // Check for common errors
                     if (error.Contains("node_errors") || error.Contains("class_type"))
                     {
+                        string modelHint = "Please ensure you have the 'dreamshaper_8.safetensors' model installed.";
+                        if (error.IndexOf("flux-2-klein", StringComparison.OrdinalIgnoreCase) >= 0
+                            || error.IndexOf("flux2", StringComparison.OrdinalIgnoreCase) >= 0
+                            || error.IndexOf("qwen_3_4b", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            modelHint = "Please ensure the Flux 2 Klein files are installed: " +
+                                "'flux-2-klein-4b-fp8.safetensors' (diffusion_models), " +
+                                "'qwen_3_4b.safetensors' (text_encoders), 'flux2-vae.safetensors' (vae).";
+                        }
                         throw new Exception($"ComfyUI workflow error - a required node may be missing.\n" +
-                            "Please ensure you have the 'dreamshaper_8.safetensors' model installed.\n\n" +
+                            modelHint + "\n\n" +
                             $"Server response: {error.Substring(0, Math.Min(500, error.Length))}");
                     }
 
@@ -1069,13 +1078,156 @@ namespace MeesaMultisMaker.ComfyUI
     }},
     ""class_type"": ""CLIPTextEncode""
   }},
-  ""53"": {{
+   ""53"": {{
+     ""inputs"": {{
+       ""width"": {width},
+       ""height"": {height},
+       ""batch_size"": 1
+     }},
+     ""class_type"": ""EmptySD3LatentImage""
+   }}
+}}";
+        }
+    }
+
+    public class Flux2KleinWorkflow
+    {
+        public const string KLEIN_DISPLAY_NAME = "Flux 2 Klein 4B";
+        public const string DEFAULT_UNET = "flux-2-klein-4b-fp8.safetensors";
+        public const string DEFAULT_CLIP = "qwen_3_4b.safetensors";
+        public const string DEFAULT_VAE = "flux2-vae.safetensors";
+        public const int KLEIN_STEPS = 4;
+        public const double KLEIN_CFG = 1.0;
+        /// <summary>
+        /// Legacy classic-KSampler img2img minimum (8 steps at denoise ~0.35).
+        /// No longer used: Klein img2img is now the reference-edit baseline
+        /// (fixed 4 steps / cfg 1.0, no denoise). Kept for compat only.
+        /// See Flux2KleinImage2ImageWorkflow.
+        /// </summary>
+        public const int KLEIN_IMG2IMG_STEPS = 8;
+        public const double KLEIN_IMG2IMG_CFG = 1.0;
+
+        public static bool IsKlein(string checkpoint)
+        {
+            if (string.IsNullOrWhiteSpace(checkpoint))
+                return false;
+            if (string.Equals(checkpoint.Trim(), KLEIN_DISPLAY_NAME, StringComparison.OrdinalIgnoreCase))
+                return true;
+            return checkpoint.IndexOf("flux-2-klein", StringComparison.OrdinalIgnoreCase) >= 0
+                || checkpoint.IndexOf("flux2", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        public static string CreateWorkflow(string positivePrompt, string negativePrompt = "", int width = 1024, int height = 1024, int steps = 4, double cfg = 1.0, long? seed = null, string samplerName = "euler", string unet = null, string clip = null, string vae = null)
+        {
+            if (!seed.HasValue || seed.Value < 0)
+                seed = new Random().Next();
+
+            positivePrompt = (positivePrompt ?? string.Empty).Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
+            // Flux 2 Klein takes no negative prompt; accept the parameter but always send "".
+            string emptyNegative = string.Empty;
+            unet = string.IsNullOrWhiteSpace(unet) ? DEFAULT_UNET : unet.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            clip = string.IsNullOrWhiteSpace(clip) ? DEFAULT_CLIP : clip.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            vae = string.IsNullOrWhiteSpace(vae) ? DEFAULT_VAE : vae.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            samplerName = string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            width = Math.Max(16, width);
+            height = Math.Max(16, height);
+
+            return $@"{{
+  ""1"": {{
+    ""inputs"": {{
+      ""unet_name"": ""{unet}"",
+      ""weight_dtype"": ""default""
+    }},
+    ""class_type"": ""UNETLoader""
+  }},
+  ""2"": {{
+    ""inputs"": {{
+      ""clip_name"": ""{clip}"",
+      ""type"": ""flux2"",
+      ""device"": ""default""
+    }},
+    ""class_type"": ""CLIPLoader""
+  }},
+  ""3"": {{
+    ""inputs"": {{
+      ""vae_name"": ""{vae}""
+    }},
+    ""class_type"": ""VAELoader""
+  }},
+  ""4"": {{
+    ""inputs"": {{
+      ""text"": ""{positivePrompt}"",
+      ""clip"": [""2"", 0]
+    }},
+    ""class_type"": ""CLIPTextEncode""
+  }},
+  ""5"": {{
+    ""inputs"": {{
+      ""text"": ""{emptyNegative}"",
+      ""clip"": [""2"", 0]
+    }},
+    ""class_type"": ""CLIPTextEncode""
+  }},
+  ""6"": {{
     ""inputs"": {{
       ""width"": {width},
       ""height"": {height},
       ""batch_size"": 1
     }},
-    ""class_type"": ""EmptySD3LatentImage""
+    ""class_type"": ""EmptyFlux2LatentImage""
+  }},
+  ""7"": {{
+    ""inputs"": {{
+      ""sampler_name"": ""{samplerName}""
+    }},
+    ""class_type"": ""KSamplerSelect""
+  }},
+  ""8"": {{
+    ""inputs"": {{
+      ""steps"": {steps},
+      ""width"": {width},
+      ""height"": {height}
+    }},
+    ""class_type"": ""Flux2Scheduler""
+  }},
+  ""9"": {{
+    ""inputs"": {{
+      ""noise_seed"": {seed}
+    }},
+    ""class_type"": ""RandomNoise""
+  }},
+  ""10"": {{
+    ""inputs"": {{
+      ""model"": [""1"", 0],
+      ""positive"": [""4"", 0],
+      ""negative"": [""5"", 0],
+      ""cfg"": {cfg.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}
+    }},
+    ""class_type"": ""CFGGuider""
+  }},
+  ""11"": {{
+    ""inputs"": {{
+      ""noise"": [""9"", 0],
+      ""guider"": [""10"", 0],
+      ""sampler"": [""7"", 0],
+      ""sigmas"": [""8"", 0],
+      ""latent_image"": [""6"", 0]
+    }},
+    ""class_type"": ""SamplerCustomAdvanced""
+  }},
+  ""12"": {{
+    ""inputs"": {{
+      ""samples"": [""11"", 0],
+      ""vae"": [""3"", 0]
+    }},
+    ""class_type"": ""VAEDecode""
+  }},
+  ""13"": {{
+    ""inputs"": {{
+      ""filename_prefix"": ""Flux2-Klein"",
+      ""images"": [""12"", 0]
+    }},
+    ""class_type"": ""SaveImage""
   }}
 }}";
         }

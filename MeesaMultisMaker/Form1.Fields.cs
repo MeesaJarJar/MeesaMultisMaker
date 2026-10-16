@@ -66,6 +66,11 @@ namespace MeesaMultisMaker
         // Clipboard for copy/paste
         private List<PlacedObject> clipboardObjects = null;
 
+        // Monotonic counter for Explorer file-drop placeholder GraphicIds
+        // ("drop_N"). GetUniqueDropPlaceholderId skips values already in use
+        // so IDs can never collide with real hex art IDs or each other.
+        private int _dropPlaceholderCounter = 1;
+
         private readonly Stack<List<PlacedObject>> undoStack = new Stack<List<PlacedObject>>();
         private readonly Stack<List<PlacedObject>> redoStack = new Stack<List<PlacedObject>>();
         private readonly HashSet<PlacedObject> lockedObjects = new HashSet<PlacedObject>();

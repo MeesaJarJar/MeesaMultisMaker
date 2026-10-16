@@ -39,21 +39,40 @@ namespace MeesaMultisMaker.AI
             int height,
             int steps,
             double cfgScale,
-            long? seed = null)
+            long? seed = null,
+            string checkpoint = null,
+            string samplerName = "euler")
         {
-            // Use existing Text2ImageWorkflow
-            string workflow = Text2ImageWorkflow.CreateWorkflow(
-                prompt,
-                negativePrompt,
-                width,
-                height,
-                steps,
-                cfgScale,
-                seed,
-                "euler",
-                "normal",
-                Text2ImageWorkflow.DEFAULT_CHECKPOINT
-            );
+            // Flux 2 Klein uses a dedicated UNET/CLIP/VAE workflow; SD checkpoints use Text2ImageWorkflow.
+            string workflow;
+            if (Flux2KleinWorkflow.IsKlein(checkpoint))
+            {
+                workflow = Flux2KleinWorkflow.CreateWorkflow(
+                    prompt,
+                    "",
+                    width,
+                    height,
+                    Flux2KleinWorkflow.KLEIN_STEPS,
+                    Flux2KleinWorkflow.KLEIN_CFG,
+                    seed,
+                    string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName
+                );
+            }
+            else
+            {
+                workflow = Text2ImageWorkflow.CreateWorkflow(
+                    prompt,
+                    negativePrompt,
+                    width,
+                    height,
+                    steps,
+                    cfgScale,
+                    seed,
+                    string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName,
+                    "normal",
+                    checkpoint ?? Text2ImageWorkflow.DEFAULT_CHECKPOINT
+                );
+            }
 
             string promptId = await _client.QueuePrompt(workflow);
             if (string.IsNullOrEmpty(promptId))
@@ -80,7 +99,10 @@ namespace MeesaMultisMaker.AI
             int steps,
             double cfgScale,
             double denoise,
-            long? seed = null)
+            long? seed = null,
+            string checkpoint = null,
+            string samplerName = "euler",
+            string scheduler = "simple")
         {
             // Upload input image
             byte[] imageBytes;
@@ -92,21 +114,37 @@ namespace MeesaMultisMaker.AI
 
             string uploadedFilename = await _client.UploadImage(imageBytes, $"input_{Guid.NewGuid()}.png");
 
-            // Use existing Image2ImageWorkflow
-            string workflow = Image2ImageWorkflow.CreateWorkflow(
-                prompt,
-                negativePrompt,
-                uploadedFilename,
-                width,
-                height,
-                steps,
-                cfgScale,
-                denoise,
-                seed,
-                "euler",
-                "normal",
-                Text2ImageWorkflow.DEFAULT_CHECKPOINT
-            );
+            // Klein selected => Klein img2img graph, never silent DreamShaper.
+            string workflow;
+            if (Flux2KleinWorkflow.IsKlein(checkpoint))
+            {
+                workflow = Flux2KleinImage2ImageWorkflow.CreateWorkflow(
+                    prompt,
+                    negativePrompt,
+                    uploadedFilename,
+                    width,
+                    height,
+                    seed,
+                    string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName
+                );
+            }
+            else
+            {
+                workflow = Image2ImageWorkflow.CreateWorkflow(
+                    prompt,
+                    negativePrompt,
+                    uploadedFilename,
+                    width,
+                    height,
+                    steps,
+                    cfgScale,
+                    denoise,
+                    seed,
+                    string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName,
+                    string.IsNullOrWhiteSpace(scheduler) ? "normal" : scheduler,
+                    checkpoint ?? Text2ImageWorkflow.DEFAULT_CHECKPOINT
+                );
+            }
 
             string promptId = await _client.QueuePrompt(workflow);
             if (string.IsNullOrEmpty(promptId))
@@ -134,7 +172,10 @@ namespace MeesaMultisMaker.AI
             int steps,
             double cfgScale,
             double denoise,
-            long? seed = null)
+            long? seed = null,
+            string checkpoint = null,
+            string samplerName = "euler",
+            string scheduler = "normal")
         {
             // Upload input image
             byte[] imageBytes;
@@ -154,22 +195,42 @@ namespace MeesaMultisMaker.AI
             }
             string uploadedMaskName = await _client.UploadImage(maskBytes, $"mask_{Guid.NewGuid()}.png");
 
-            // Use existing InpaintWorkflow
-            string workflow = InpaintWorkflow.CreateWorkflow(
-                prompt,
-                negativePrompt,
-                uploadedImageName,
-                uploadedMaskName,
-                width,
-                height,
-                steps,
-                cfgScale,
-                denoise,
-                seed,
-                "euler",
-                "normal",
-                Text2ImageWorkflow.DEFAULT_CHECKPOINT
-            );
+            // Klein selected => Klein inpaint graph (pre-existing defaults untouched),
+            // never silent DreamShaper. SD selections keep InpaintWorkflow.
+            string workflow;
+            if (Flux2KleinWorkflow.IsKlein(checkpoint))
+            {
+                workflow = Flux2KleinInpaintWorkflow.CreateWorkflow(
+                    prompt,
+                    negativePrompt,
+                    uploadedImageName,
+                    uploadedMaskName,
+                    width,
+                    height,
+                    steps,
+                    cfgScale,
+                    seed,
+                    string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName
+                );
+            }
+            else
+            {
+                workflow = InpaintWorkflow.CreateWorkflow(
+                    prompt,
+                    negativePrompt,
+                    uploadedImageName,
+                    uploadedMaskName,
+                    width,
+                    height,
+                    steps,
+                    cfgScale,
+                    denoise,
+                    seed,
+                    string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName,
+                    string.IsNullOrWhiteSpace(scheduler) ? "normal" : scheduler,
+                    checkpoint ?? Text2ImageWorkflow.DEFAULT_CHECKPOINT
+                );
+            }
 
             string promptId = await _client.QueuePrompt(workflow);
             if (string.IsNullOrEmpty(promptId))

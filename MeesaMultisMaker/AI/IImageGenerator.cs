@@ -24,7 +24,9 @@ namespace MeesaMultisMaker.AI
             int height,
             int steps,
             double cfgScale,
-            long? seed = null);
+            long? seed = null,
+            string checkpoint = null,
+            string samplerName = "euler");
 
         /// <summary>
         /// Generate an image from input image (img2img)
@@ -38,7 +40,10 @@ namespace MeesaMultisMaker.AI
             int steps,
             double cfgScale,
             double denoise,
-            long? seed = null);
+            long? seed = null,
+            string checkpoint = null,
+            string samplerName = "euler",
+            string scheduler = "simple");
 
         /// <summary>
         /// Generate an image with inpainting mask
@@ -53,7 +58,10 @@ namespace MeesaMultisMaker.AI
             int steps,
             double cfgScale,
             double denoise,
-            long? seed = null);
+            long? seed = null,
+            string checkpoint = null,
+            string samplerName = "euler",
+            string scheduler = "normal");
 
         /// <summary>
         /// Get backend display name

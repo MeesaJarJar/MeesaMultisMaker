@@ -55,6 +55,11 @@ namespace MeesaMultisMaker.Audio
 
         #region Playback
 
+        /// <summary>Last requested volume 0-100. Stored always, so a
+        /// level set before Play (every caller does SetVolume then Play)
+        /// is applied when playback starts instead of being dropped.</summary>
+        public int Volume { get; private set; } = 90;
+
         public void Play(string path, int fromMs = 0, int toMs = -1)
         {
             Stop();
@@ -67,6 +72,8 @@ namespace MeesaMultisMaker.Audio
                 Send(cmd);
                 IsPlaying = true;
                 IsPaused = false;
+                try { Send("setaudio " + PlayAlias + " volume to " + (Volume * 10)); }
+                catch { }
             }
             catch
             {
@@ -176,6 +183,7 @@ namespace MeesaMultisMaker.Audio
         {
             if (percent < 0) percent = 0;
             if (percent > 100) percent = 100;
+            Volume = percent;
             try
             {
                 if (IsPlaying) Send("setaudio " + PlayAlias + " volume to " + (percent * 10));

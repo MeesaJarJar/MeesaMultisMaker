@@ -38,11 +38,16 @@ namespace MeesaMultisMaker
 
         private readonly List<UnifyGroup> groups;
         private readonly List<int> chosenIndex;
+        // Each RadioButton lives inside its own thumbnail cell Panel, so WinForms
+        // cannot enforce mutual exclusion per ID group (exclusion is per-parent).
+        // Track the buttons per group and enforce single-selection in code.
+        private readonly List<List<RadioButton>> groupRadios;
 
         public UnifyPickerDialog(List<UnifyGroup> groups)
         {
             this.groups = groups;
             chosenIndex = groups.Select(g => Math.Max(0, Math.Min(g.DefaultIndex, g.Variants.Count - 1))).ToList();
+            groupRadios = groups.Select(g => new List<RadioButton>(g.Variants.Count)).ToList();
 
             Text = "Unify Same IDs - pick the winning artwork";
             StartPosition = FormStartPosition.CenterParent;
@@ -130,9 +135,16 @@ namespace MeesaMultisMaker
                     int capturedVi = vi;
 
                     var cell = new Panel { Width = 116, Height = 128, BackColor = Color.Transparent };
+                    // A variant may have been disposed upstream (shared art-cache
+                    // instance): touching Width throws ArgumentException. Show a
+                    // placeholder label instead of crashing the dialog.
+                    int vw = 0, vh = 0;
+                    bool thumbOk = false;
+                    try { vw = v.Image.Width; vh = v.Image.Height; thumbOk = vw > 0 && vh > 0; }
+                    catch { thumbOk = false; }
                     var pic = new PictureBox
                     {
-                        Image = v.Image,
+                        Image = thumbOk ? v.Image : null,
                         SizeMode = PictureBoxSizeMode.Zoom,
                         Left = 8,
                         Top = 2,
@@ -140,7 +152,9 @@ namespace MeesaMultisMaker
                         Height = 96,
                         BorderStyle = BorderStyle.FixedSingle
                     };
-                    string tag = string.Format("#{0}{1} ({2}x{3})", vi + 1, v.IsRegen ? " AI" : "", v.Image.Width, v.Image.Height);
+                    string tag = thumbOk
+                        ? string.Format("#{0}{1} ({2}x{3})", vi + 1, v.IsRegen ? " AI" : "", vw, vh)
+                        : string.Format("#{0} (unusable)", vi + 1);
                     var radio = new RadioButton
                     {
                         Text = tag,
@@ -156,8 +170,15 @@ namespace MeesaMultisMaker
                     {
                         var rb = s as RadioButton;
                         if (rb != null && rb.Checked)
+                        {
                             chosenIndex[capturedGi] = (int)rb.Tag;
+                            // Enforce exactly one winner per ID group: uncheck siblings.
+                            foreach (var other in groupRadios[capturedGi])
+                                if (!ReferenceEquals(other, rb) && other.Checked)
+                                    other.Checked = false;
+                        }
                     };
+                    groupRadios[gi].Add(radio);
                     pic.Click += (s, e) => { radio.Checked = true; };
                     cell.Controls.Add(pic);
                     cell.Controls.Add(radio);
@@ -172,9 +193,24 @@ namespace MeesaMultisMaker
             for (int gi = 0; gi < groups.Count; gi++)
             {
                 var g = groups[gi];
+                if (g.Variants == null || g.Variants.Count == 0) continue;
                 int idx = Math.Max(0, Math.Min(chosenIndex[gi], g.Variants.Count - 1));
-                ChosenById[g.GraphicId] = g.Variants[idx].Image;
+                // The chosen artwork may have been disposed upstream; fall back
+                // to the first usable variant. If none is usable, omit the key
+                // so the caller keeps its own safe fallback (never a corpse).
+                Bitmap pick = IsUsable(g.Variants[idx].Image) ? g.Variants[idx].Image : null;
+                if (pick == null)
+                    pick = g.Variants.Where(v => IsUsable(v.Image)).Select(v => v.Image).FirstOrDefault();
+                if (pick != null)
+                    ChosenById[g.GraphicId] = pick;
             }
+        }
+
+        private static bool IsUsable(Image img)
+        {
+            if (img == null) return false;
+            try { return img.Width > 0 && img.Height > 0; }
+            catch { return false; }
         }
     }
 }
