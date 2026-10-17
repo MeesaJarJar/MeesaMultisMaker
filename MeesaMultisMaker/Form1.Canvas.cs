@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace MeesaMultisMaker
@@ -197,6 +200,25 @@ namespace MeesaMultisMaker
                     }
                 }
             } // End foreach
+
+            // Show Overlap layer: tint every screen pixel where a piece drawn
+            // LATER (painter order) covered opaque pixels of a piece drawn
+            // EARLIER. Cached bitmap anchored at the build-time canvas offset;
+            // panning just translates it (see region Show Overlap Layer).
+            if (showOverlapLayer)
+            {
+                try
+                {
+                    EnsureOverlapOverlayValid(minZFilter, maxZFilter);
+                    if (overlapBitmap != null && overlapPixelCount > 0)
+                    {
+                        g.DrawImage(overlapBitmap,
+                            canvasOffset.X - overlapBuildOffsetX,
+                            canvasOffset.Y - overlapBuildOffsetY);
+                    }
+                }
+                catch { }
+            }
 
             // Draw marquee
             if (isMarquee)
@@ -1013,6 +1035,362 @@ namespace MeesaMultisMaker
             catch { }
             paintTagCache[graphicId.Trim()] = Tuple.Create(isFloor, height);
         }
+
+        #region Show Overlap Layer
+
+        // ---------------------------------------------------------------------------
+        // "Show Overlap" toggle (toolbar button on the Z-filter row).
+        //
+        // When on, the canvas tints every screen pixel where a piece drawn
+        // LATER (painter's order, GetPaintOrder) covers opaque pixels of a
+        // piece drawn EARLIER. With iso front walls painting over back walls
+        // this shows exactly the regions the "AI Regen as One" composite
+        // cannot know about.
+        //
+        // Approximations (acceptable for a visual aid): skewed/rotated art is
+        // sampled from its axis-aligned draw rect mapped proportionally,
+        // matching the un-transformed DrawImage path; horizontal/vertical
+        // flips are handled exactly; alpha >= 128 counts as opaque.
+        //
+        // Caching/perf: the overlay is built once into a client-sized ARGB
+        // bitmap anchored to the canvasOffset at build time. Panning reuses
+        // the cached bitmap via a plain translation; a rebuild happens when
+        // the (scene fingerprint, zoom, Z filter bounds, client size)
+        // signature changes, or when a pan would expose more than half a
+        // screen of uncached area. The scene fingerprint is a cheap O(objects)
+        // fold computed while the layer is on, so adds/removes/moves/Hidden
+        // flips/transform changes/art swaps (new Image instance, which every
+        // edit and AI-regen path produces - in-place bitmap repaints are NOT
+        // detected) invalidate the cache without wiring dirty calls into
+        // every editing path. Rebuilds are throttled while objects are
+        // dragged; the toggle being OFF skips all of this work entirely.
+        // ---------------------------------------------------------------------------
+
+        private bool showOverlapLayer;
+        private Button showOverlapButton;
+
+        private Bitmap overlapBitmap;      // client-sized ARGB; transparent except tinted pixels
+        private int overlapBuildOffsetX;   // canvasOffset.X when the cache was built
+        private int overlapBuildOffsetY;   // canvasOffset.Y when the cache was built
+        private int overlapPixelCount;
+
+        // Signature of the last build; any mismatch forces a rebuild.
+        private long overlapLastSceneStamp = long.MinValue;
+        private float overlapLastZoom = float.NaN;
+        private int overlapLastMinZ = int.MinValue;
+        private int overlapLastMaxZ = int.MinValue;
+        private int overlapLastClientW = -1;
+        private int overlapLastClientH = -1;
+
+        // Scratch buffers reused between rebuilds to keep GC pressure low.
+        private int[] overlapScratch;      // owner pass; reused as the ARGB color buffer
+        private byte[] overlapHitScratch;  // 1 = pixel covered by a later-drawn piece
+        private byte[] overlapRgbaScratch; // extracted 32bpp image bytes (grows as needed)
+
+        // Tint: semi transparent magenta fill plus a brighter 1px edge pass.
+        private static readonly Color OverlapTintCore = Color.FromArgb(110, 255, 0, 200);
+        private static readonly Color OverlapTintEdge = Color.FromArgb(220, 255, 0, 200);
+
+        private const int OverlapDragRebuildThrottleMs = 80;
+        private DateTime overlapLastBuildTime = DateTime.MinValue;
+
+        /// <summary>
+        /// Toolbar "Show Overlap" toggle. Magenta pixels on the canvas show
+        /// where art drawn later covers art drawn earlier (painter order).
+        /// </summary>
+        private void ToggleShowOverlap()
+        {
+            showOverlapLayer = !showOverlapLayer;
+            if (!showOverlapLayer) FreeOverlapOverlay();
+            if (showOverlapButton != null)
+            {
+                showOverlapButton.BackColor = showOverlapLayer
+                    ? HolographicTheme.ButtonAccent
+                    : HolographicTheme.ButtonBackground;
+                showOverlapButton.FlatAppearance.BorderColor = showOverlapLayer
+                    ? HolographicTheme.CyanAccent
+                    : HolographicTheme.BorderCyan;
+            }
+            outputTextBox.AppendText(showOverlapLayer
+                ? "Overlap view ON - magenta pixels show where art covers other art\r\n"
+                : "Overlap view OFF\r\n");
+            designPictureBox.Invalidate();
+        }
+
+        /// <summary>Drops the cached overlay (and scratch buffers).</summary>
+        private void FreeOverlapOverlay()
+        {
+            try { if (overlapBitmap != null) overlapBitmap.Dispose(); } catch { }
+            overlapBitmap = null;
+            overlapPixelCount = 0;
+            overlapScratch = null;
+            overlapHitScratch = null;
+            overlapRgbaScratch = null;
+        }
+
+        /// <summary>
+        /// Cheap dirty detector: one O(objects) arithmetic fold over all
+        /// placed objects, called each paint while the layer is on. Catches
+        /// count changes, grid/Z/pixel-offset/Layer moves, Hidden flips,
+        /// transform changes and art-image swaps (by instance identity).
+        /// </summary>
+        private long ComputeOverlapSceneStamp()
+        {
+            long h = 1125899906842679L; // odd prime-ish seed
+            foreach (var o in placedObjects)
+            {
+                unchecked
+                {
+                    h = h * 31 + (uint)o.GridX;
+                    h = h * 31 + (uint)o.GridY;
+                    h = h * 31 + (uint)o.Z;
+                    h = h * 31 + (uint)o.PixelOffsetX;
+                    h = h * 31 + (uint)o.PixelOffsetY;
+                    h = h * 31 + (uint)o.Layer;
+                    h = h * 31 + (uint)((o.Hidden ? 1 : 0) | (o.FlipHorizontal ? 2 : 0)
+                        | (o.FlipVertical ? 4 : 0) | (o.HasSkew ? 8 : 0));
+                    h = h * 31 + (uint)(int)(o.Scale * 100f);
+                    h = h * 31 + (uint)(int)(o.Rotation * 4f);
+                    h = h * 31 + (uint)(o.Image == null ? 0 : RuntimeHelpers.GetHashCode(o.Image));
+                    if (o.HasSkew)
+                    {
+                        int sk = ((int)o.SkewTopLeft.X + (int)o.SkewTopLeft.Y)
+                               ^ ((int)o.SkewTopRight.X + (int)o.SkewTopRight.Y)
+                               ^ ((int)o.SkewBottomRight.X + (int)o.SkewBottomRight.Y)
+                               ^ ((int)o.SkewBottomLeft.X + (int)o.SkewBottomLeft.Y);
+                        h = h * 31 + (uint)sk;
+                    }
+                }
+            }
+            return h;
+        }
+
+        /// <summary>
+        /// Rebuilds the cached overlay when the current view/scene signature
+        /// differs from the last build. Called from DesignPictureBox_Paint.
+        /// </summary>
+        private void EnsureOverlapOverlayValid(int minZFilter, int maxZFilter)
+        {
+            int cw, ch;
+            try { cw = designPictureBox.ClientSize.Width; ch = designPictureBox.ClientSize.Height; }
+            catch { return; }
+            if (cw <= 0 || ch <= 0) return;
+
+            // Keep the previous frame's overlay mid-drag instead of rebuilding
+            // for every mouse move; a slightly stale tint during an active
+            // drag is fine.
+            if (isDragging && (DateTime.UtcNow - overlapLastBuildTime).TotalMilliseconds < OverlapDragRebuildThrottleMs)
+                return;
+
+            long stamp = ComputeOverlapSceneStamp();
+            bool valid = overlapBitmap != null
+                && cw == overlapLastClientW && ch == overlapLastClientH
+                && zoom == overlapLastZoom
+                && minZFilter == overlapLastMinZ && maxZFilter == overlapLastMaxZ
+                && stamp == overlapLastSceneStamp
+                && Math.Abs(canvasOffset.X - overlapBuildOffsetX) <= cw / 2
+                && Math.Abs(canvasOffset.Y - overlapBuildOffsetY) <= ch / 2;
+            if (valid) return;
+
+            OverlapRebuild(minZFilter, maxZFilter, cw, ch, stamp);
+            overlapLastBuildTime = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Rasterizes the overlay: walks GetPaintOrder() with the same screen
+        /// math as DesignPictureBox_Paint, maps each opaque source pixel to
+        /// its axis-aligned screen rect (nearest sampling, proportional for
+        /// skew/rotation), and marks pixels whose owner cell already held a
+        /// DIFFERENT (earlier-drawn) object.
+        /// </summary>
+        private void OverlapRebuild(int minZFilter, int maxZFilter, int cw, int ch, long stamp)
+        {
+            int total = cw * ch;
+            var owners = overlapScratch;
+            if (owners == null || owners.Length < total) { owners = new int[total]; overlapScratch = owners; }
+            var hit = overlapHitScratch;
+            if (hit == null || hit.Length < total) { hit = new byte[total]; overlapHitScratch = hit; }
+            for (int i = 0; i < total; i++) { owners[i] = -1; hit[i] = 0; }
+
+            int paintIndex = 0; // stable id per object, even if the object gets skipped
+            foreach (var obj in GetPaintOrder())
+            {
+                int owner = paintIndex++;
+
+                if (obj.Hidden) continue;
+                if (!IsImageUsable(obj.Image)) continue;
+                if (obj.Z < minZFilter || obj.Z > maxZFilter) continue;
+
+                var srcBmp = obj.Image as Bitmap;
+                if (srcBmp == null) continue;
+
+                // Same draw math as the live object loop above so the tint
+                // lands exactly on the drawn artwork.
+                float objScale = obj.Scale * zoom;
+                float zOffset = obj.Z * Z_PIXEL * zoom;
+                float isoX = (obj.GridX - obj.GridY) * (TILE_WIDTH / 2f);
+                float isoY = (obj.GridX + obj.GridY) * (TILE_HEIGHT / 2f);
+                float screenX = canvasOffset.X + isoX * zoom + obj.PixelOffsetX * zoom;
+                float screenY = canvasOffset.Y + isoY * zoom + obj.PixelOffsetY * zoom;
+                float w, h;
+                try { w = obj.Image.Width * objScale; h = obj.Image.Height * objScale; }
+                catch { continue; }
+                float tileHalfHeight = (TILE_HEIGHT / 2f) * zoom;
+                float drawX = screenX - w / 2f;
+                float drawY = screenY - h + tileHalfHeight - zOffset;
+
+                if (drawX >= cw || drawY >= ch || drawX + w <= 0f || drawY + h <= 0f) continue;
+
+                int imgW, imgH;
+                try { imgW = srcBmp.Width; imgH = srcBmp.Height; }
+                catch { continue; }
+                if (imgW <= 0 || imgH <= 0 || objScale <= 0f) continue;
+
+                BitmapData data = null;
+                try
+                {
+                    data = srcBmp.LockBits(new Rectangle(0, 0, imgW, imgH),
+                        ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    int stride = data.Stride;
+                    int bytes = stride * imgH;
+                    var rgba = overlapRgbaScratch;
+                    if (rgba == null || rgba.Length < bytes) { rgba = new byte[bytes]; overlapRgbaScratch = rgba; }
+                    Marshal.Copy(data.Scan0, rgba, 0, bytes);
+                    srcBmp.UnlockBits(data);
+                    data = null;
+
+                    bool flipH = obj.FlipHorizontal, flipV = obj.FlipVertical;
+
+                    if (objScale >= 1f)
+                    {
+                        // Upscale/1:1: walk image pixels, expand each into its screen span.
+                        for (int iy = 0; iy < imgH; iy++)
+                        {
+                            int sRow = flipV ? (imgH - 1 - iy) : iy;
+                            int rowBase = sRow * stride;
+                            float fy0 = drawY + iy * objScale;
+                            int sy0 = (int)Math.Ceiling(fy0);
+                            int sy1 = (int)Math.Ceiling(fy0 + objScale);
+                            if (sy1 <= 0 || sy0 >= ch) continue;
+                            if (sy0 < 0) sy0 = 0;
+                            if (sy1 > ch) sy1 = ch;
+                            for (int ix = 0; ix < imgW; ix++)
+                            {
+                                if (rgba[rowBase + ix * 4 + 3] < 128) continue;
+                                int sCol = flipH ? (imgW - 1 - ix) : ix;
+                                float fx0 = drawX + sCol * objScale;
+                                int sx0 = (int)Math.Ceiling(fx0);
+                                int sx1 = (int)Math.Ceiling(fx0 + objScale);
+                                if (sx1 <= 0 || sx0 >= cw) continue;
+                                if (sx0 < 0) sx0 = 0;
+                                if (sx1 > cw) sx1 = cw;
+                                for (int sy = sy0; sy < sy1; sy++)
+                                {
+                                    int cell = sy * cw + sx0;
+                                    for (int sx = sx0; sx < sx1; sx++, cell++)
+                                    {
+                                        int prev = owners[cell];
+                                        if (prev != -1 && prev != owner) hit[cell] = 1;
+                                        else owners[cell] = owner;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Downscale: walk screen pixels, nearest-sample the source.
+                        int x0 = Math.Max(0, (int)Math.Ceiling(drawX));
+                        int x1 = Math.Min(cw, (int)Math.Ceiling(drawX + imgW * objScale));
+                        int y0 = Math.Max(0, (int)Math.Ceiling(drawY));
+                        int y1 = Math.Min(ch, (int)Math.Ceiling(drawY + imgH * objScale));
+                        for (int sy = y0; sy < y1; sy++)
+                        {
+                            int iy = (int)(((sy + 0.5f) - drawY) / objScale);
+                            if (iy < 0) iy = 0; else if (iy >= imgH) iy = imgH - 1;
+                            int sRow = flipV ? (imgH - 1 - iy) : iy;
+                            int rowBase = sRow * stride;
+                            int cell = sy * cw + x0;
+                            for (int sx = x0; sx < x1; sx++, cell++)
+                            {
+                                int ix = (int)(((sx + 0.5f) - drawX) / objScale);
+                                if (ix < 0) ix = 0; else if (ix >= imgW) ix = imgW - 1;
+                                int sCol = flipH ? (imgW - 1 - ix) : ix;
+                                if (rgba[rowBase + sCol * 4 + 3] < 128) continue;
+                                int prev = owners[cell];
+                                if (prev != -1 && prev != owner) hit[cell] = 1;
+                                else owners[cell] = owner;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Disposed/mangled image: skip this object, keep the overlay buildable.
+                    if (data != null) { try { srcBmp.UnlockBits(data); } catch { } }
+                    continue;
+                }
+            }
+
+            // Paint pass: magenta core fill, brighter edge where a tinted
+            // pixel touches an untinted neighbor (readability on busy art).
+            int coreArgb = OverlapTintCore.ToArgb();
+            int edgeArgb = OverlapTintEdge.ToArgb();
+            int count = 0;
+            for (int i = 0; i < total; i++)
+            {
+                if (hit[i] == 0) { owners[i] = 0; continue; }
+                bool edge =
+                    (i >= cw && hit[i - cw] == 0) ||
+                    (i + cw < total && hit[i + cw] == 0) ||
+                    (i % cw != 0 && hit[i - 1] == 0) ||
+                    (i % cw != cw - 1 && hit[i + 1] == 0);
+                owners[i] = edge ? edgeArgb : coreArgb;
+                count++;
+            }
+
+            var bmp = new Bitmap(cw, ch, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            try
+            {
+                var bd = bmp.LockBits(new Rectangle(0, 0, cw, ch),
+                    ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                try { Marshal.Copy(owners, 0, bd.Scan0, total); }
+                finally { bmp.UnlockBits(bd); }
+            }
+            catch
+            {
+                bmp.Dispose();
+                overlapBitmap = null;
+                overlapPixelCount = 0;
+                // Commit the failed signature so a broken view cannot cause an
+                // endless rebuild-retry loop on every paint.
+                OverlapCommitSignature(minZFilter, maxZFilter, cw, ch, stamp);
+                return;
+            }
+
+            var oldBmp = overlapBitmap;
+            overlapBitmap = bmp;
+            overlapPixelCount = count;
+            OverlapCommitSignature(minZFilter, maxZFilter, cw, ch, stamp);
+            if (oldBmp != null && !ReferenceEquals(oldBmp, bmp))
+            {
+                try { oldBmp.Dispose(); } catch { }
+            }
+        }
+
+        private void OverlapCommitSignature(int minZFilter, int maxZFilter, int cw, int ch, long stamp)
+        {
+            overlapLastSceneStamp = stamp;
+            overlapLastZoom = zoom;
+            overlapLastMinZ = minZFilter;
+            overlapLastMaxZ = maxZFilter;
+            overlapLastClientW = cw;
+            overlapLastClientH = ch;
+            overlapBuildOffsetX = canvasOffset.X;
+            overlapBuildOffsetY = canvasOffset.Y;
+        }
+
+        #endregion
 
         private PlacedObject HitTestPlacedObject(Point location, bool includeLocked)
         {

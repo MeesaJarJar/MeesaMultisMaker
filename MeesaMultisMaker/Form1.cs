@@ -673,7 +673,7 @@ namespace MeesaMultisMaker
             // AI export/import buttons - Row 4
             var exportPartsBtn = CreateThemedButton("Export Parts", 10, 100, 110, ButtonStyle.Default);
             exportPartsBtn.Click += (s, e) => ExportComponentsForAi();
-            buttonTooltip.SetToolTip(exportPartsBtn, "Export selected objects as individual images for AI processing");
+            buttonTooltip.SetToolTip(exportPartsBtn, "Export one artwork per unique ID; skips hidden pieces");
             this.controlsPanel.Controls.Add(exportPartsBtn);
 
             var importPartsBtn = CreateThemedButton("Import Parts", 130, 100, 110, ButtonStyle.Default);
@@ -829,6 +829,11 @@ namespace MeesaMultisMaker
             hideFloorsButton.Click += (s, e) => ToggleHideFloors();
             buttonTooltip.SetToolTip(hideFloorsButton, "Hide floor tiles (TileData Surface/Bridge) so walls can be edited. Click again to show.");
             this.controlsPanel.Controls.Add(hideFloorsButton);
+
+            showOverlapButton = CreateThemedButton("Show Overlap", 935, 147, 95, ButtonStyle.Default);
+            showOverlapButton.Click += (s, e) => ToggleShowOverlap();
+            buttonTooltip.SetToolTip(showOverlapButton, "Magenta tint shows art covered by later-drawn pieces (airogen-as-one blind spots). Click to toggle.");
+            this.controlsPanel.Controls.Add(showOverlapButton);
 
             // Increase controls panel height
             this.controlsPanel.Height = 180;

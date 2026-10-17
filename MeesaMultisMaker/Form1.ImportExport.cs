@@ -664,6 +664,13 @@ namespace MeesaMultisMaker
             return bitmap;
         }
 
+        /// <summary>
+        /// Export Parts: one PNG per DISTINCT GraphicId (the unify-winner
+        /// artwork, topmost member in canvas paint order). Hidden objects are
+        /// skipped entirely. The manifest keeps one row per non-hidden
+        /// placement so Import Parts can rebuild the full layout; every
+        /// placement of an ID points at the same shared PNG.
+        /// </summary>
         private void ExportComponentsForAi()
         {
             if (placedObjects.Count == 0)
@@ -673,32 +680,100 @@ namespace MeesaMultisMaker
             }
             using (var fbd = new FolderBrowserDialog())
             {
-                fbd.Description = "Select a folder to export per-component PNGs and manifest";
+                fbd.Description = "Select a folder to export one PNG per unique ID and the placement manifest";
                 if (fbd.ShowDialog() != DialogResult.OK) return;
                 var targetRoot = Path.Combine(fbd.SelectedPath, $"multi_export_{DateTime.Now:yyyyMMdd_HHmmss}");
                 Directory.CreateDirectory(targetRoot);
                 var manifestLines = new List<string>();
                 manifestLines.Add("# AI Component Manifest (TSV)");
                 manifestLines.Add($"# generatedUtc={DateTime.UtcNow:o}");
+                manifestLines.Add("# one file per unique ID; shared by all placements of that ID");
                 manifestLines.Add("file\tgraphicId\tgridX\tgridY\tz\tlayer\tflags\twidth\theight");
-                int idx = 0;
-                foreach (var obj in placedObjects.OrderBy(o => o.Layer).ThenBy(o => o.GridY).ThenBy(o => o.GridX))
+                int hiddenCount = placedObjects.Count(o => o.Hidden);
+
+                // Canvas paint order (shared ComparePaintOrder: back-to-front),
+                // exclusive of hidden placements. The first appearance of each
+                // ID in this order numbers its artwork; the LAST member (drawn
+                // last/topmost) is that ID's winner.
+                var ordered = GetPaintOrder().Where(o => !o.Hidden).ToList();
+                var groupOrder = new List<string>();
+                var groups = new Dictionary<string, List<PlacedObject>>();
+                foreach (var obj in ordered)
                 {
-                    if (obj.Image == null) continue;
-                    var safeId = EnsureHexPrefix(obj.GraphicId).Replace(":", "_").Replace("/", "_");
-                    var fileName = $"{idx:D3}_{safeId}.png";
-                    var savePath = Path.Combine(targetRoot, fileName);
-                    using (var transformedBmp = RenderTransformedObject(obj))
+                    var key = NormalizeGraphicIdKey(obj.GraphicId);
+                    List<PlacedObject> members;
+                    if (!groups.TryGetValue(key, out members))
                     {
-                        transformedBmp.Save(savePath, ImageFormat.Png);
-                        manifestLines.Add($"{fileName}\t{EnsureHexPrefix(obj.GraphicId)}\t{obj.GridX}\t{obj.GridY}\t{obj.Z}\t{obj.Layer}\t{obj.Flags}\t{transformedBmp.Width}\t{transformedBmp.Height}");
+                        members = new List<PlacedObject>();
+                        groups[key] = members;
+                        groupOrder.Add(key);
                     }
-                    idx++;
+                    members.Add(obj);
+                }
+
+                // Art is exported raw: a fresh clone of the winner's image,
+                // WITHOUT burning per-tile transforms. Scale/Rotation/Flip/
+                // Skew/PixelOffset differ per placement and have no manifest
+                // columns, so baking them into the shared PNG would corrupt
+                // every other placement of that ID on import.
+                var groupToFile = new Dictionary<string, string>();
+                var groupToSize = new Dictionary<string, Size>();
+                int fileIdx = 0;
+                foreach (var key in groupOrder)
+                {
+                    var members = groups[key];
+                    PlacedObject winner = null;
+                    for (int i = members.Count - 1; i >= 0; i--)
+                    {
+                        if (IsImageUsable(members[i].Image)) { winner = members[i]; break; }
+                    }
+                    if (winner == null)
+                    {
+                        string label = EnsureHexPrefix(key);
+                        outputTextBox.AppendText($"Export parts skipped {(string.IsNullOrEmpty(label) ? "(no id)" : label)}: no usable artwork\r\n");
+                        continue;
+                    }
+                    var safeId = EnsureHexPrefix(key).Replace(":", "_").Replace("/", "_");
+                    var fileName = $"{fileIdx:D3}_{safeId}.png";
+                    using (var art = new Bitmap(winner.Image))
+                    {
+                        art.Save(Path.Combine(targetRoot, fileName), ImageFormat.Png);
+                        groupToFile[key] = fileName;
+                        groupToSize[key] = new Size(art.Width, art.Height);
+                    }
+                    fileIdx++;
+                }
+
+                // One manifest row per non-hidden placement (rows share their
+                // ID's artwork file); w/h describe that PNG, not the tile.
+                int rowCount = 0;
+                foreach (var obj in ordered)
+                {
+                    var key = NormalizeGraphicIdKey(obj.GraphicId);
+                    string fileName;
+                    if (!groupToFile.TryGetValue(key, out fileName)) continue;
+                    var artSize = groupToSize[key];
+                    manifestLines.Add($"{fileName}\t{EnsureHexPrefix(key)}\t{obj.GridX}\t{obj.GridY}\t{obj.Z}\t{obj.Layer}\t{obj.Flags}\t{artSize.Width}\t{artSize.Height}");
+                    rowCount++;
                 }
                 var manifestPath = Path.Combine(targetRoot, "manifest.txt");
                 File.WriteAllLines(manifestPath, manifestLines);
-                MessageBox.Show($"Exported {idx} component(s) to:\n{targetRoot}", "Export Components", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                outputTextBox.AppendText($"Export parts: {groupToFile.Count} artworks (unique IDs), {rowCount} placements referenced, {hiddenCount} hidden skipped\r\n");
+                MessageBox.Show($"Exported {groupToFile.Count} artwork(s) covering {rowCount} placement(s) to:\n{targetRoot}", "Export Components", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+        }
+
+        /// <summary>
+        /// Canonical grouping key for Export Parts: hex IDs collapse to one
+        /// normalized "0xXXXX" form (ids are hex strings, matching
+        /// EnsureHexPrefix/TryParseGraphicId); placeholders like "drop_N",
+        /// plus null/empty, become distinct groups of their own.
+        /// </summary>
+        private static string NormalizeGraphicIdKey(string graphicId)
+        {
+            if (string.IsNullOrWhiteSpace(graphicId)) return string.Empty;
+            if (TryParseGraphicId(graphicId, out int val)) return $"0x{val:X4}";
+            return graphicId.Trim().ToUpperInvariant();
         }
 
         private Bitmap RenderTransformedObject(PlacedObject obj)
