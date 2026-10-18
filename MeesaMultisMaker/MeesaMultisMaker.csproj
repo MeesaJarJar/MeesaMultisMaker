@@ -359,6 +359,9 @@
     <Compile Include="Form1.SaveMul.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Form1.Scene.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="ImageEditingForm.cs">
       <SubType>Form</SubType>
     </Compile>

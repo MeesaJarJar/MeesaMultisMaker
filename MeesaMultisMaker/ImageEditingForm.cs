@@ -81,7 +81,11 @@ namespace MeesaMultisMaker
                 DitherLevels = _editingPanel.DitherLevels,
                 EdgeDarkening = _editingPanel.EdgeDarkening,
                 ColorBands = _editingPanel.ColorBands,
-                FillHoles = _editingPanel.FillHoles
+                FillHoles = _editingPanel.FillHoles,
+                RemoveBackground = _editingPanel.RemoveBackgroundEnabled,
+                BackgroundMode = _editingPanel.BackgroundMode,
+                BackgroundColor = _editingPanel.BackgroundColor,
+                BackgroundThreshold = _editingPanel.BackgroundThreshold
             };
         }
 
@@ -121,5 +125,11 @@ namespace MeesaMultisMaker
         public int ColorBands { get; set; }
 
         public bool FillHoles { get; set; }
+
+        // Background removal
+        public bool RemoveBackground { get; set; }
+        public string BackgroundMode { get; set; }
+        public Color BackgroundColor { get; set; }
+        public int BackgroundThreshold { get; set; }
     }
 }

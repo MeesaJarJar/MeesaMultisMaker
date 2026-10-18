@@ -687,6 +687,17 @@ namespace MeesaMultisMaker
             buttonTooltip.SetToolTip(importMultiTextBtn, "Import multi structure from text in output box");
             this.controlsPanel.Controls.Add(importMultiTextBtn);
 
+            // Save Scene / Load Scene buttons - full canvas state <-> .mmscene file
+            var saveSceneBtn = CreateThemedButton("Save Scene", 700, 70, 110, ButtonStyle.Success);
+            saveSceneBtn.Click += (s, e) => SaveScene();
+            buttonTooltip.SetToolTip(saveSceneBtn, "Save entire canvas state (placements, transforms, art) to a .mmscene file");
+            this.controlsPanel.Controls.Add(saveSceneBtn);
+
+            var loadSceneBtn = CreateThemedButton("Load Scene", 815, 70, 110, ButtonStyle.Default);
+            loadSceneBtn.Click += (s, e) => LoadScene();
+            buttonTooltip.SetToolTip(loadSceneBtn, "Load a saved .mmscene scene file (undo restores the previous canvas)");
+            this.controlsPanel.Controls.Add(loadSceneBtn);
+
             // Max Z Height label and textbox
             this.maxZLabel = new Label { Text = "Max Z Height", Left = 380, Top = 103, Width = 80, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
             HolographicTheme.ApplyToLabel(this.maxZLabel);

@@ -1187,7 +1187,7 @@ namespace MeesaMultisMaker
         }
 
         /// <summary>
-        /// Apply image effects to the first selected object
+        /// Apply image effects to all selected objects (or first palette item as a fallback)
         /// </summary>
         private void ImageEditingForm_ApplyEffects(object sender, ImageEffectEventArgs e)
         {
@@ -1195,11 +1195,15 @@ namespace MeesaMultisMaker
             {
                 PushUndo();
 
-                var obj = selectedObjects.First();
-                ApplyImageEffectsToObject(obj, e);
+                int count = 0;
+                foreach (var obj in selectedObjects.ToList())
+                {
+                    ApplyImageEffectsToObject(obj, e);
+                    count++;
+                }
 
                 designPictureBox.Invalidate();
-                _imageEditingForm?.SetStatus($"Applied effects to {obj.GraphicId}", Color.Green);
+                _imageEditingForm?.SetStatus($"Applied image effects to {count} object(s)", Color.Green);
                 return;
             }
 
@@ -1315,7 +1319,11 @@ namespace MeesaMultisMaker
                         effects.DitherLevels,
                         effects.EdgeDarkening,
                         effects.ColorBands,
-                        effects.FillHoles
+                        effects.FillHoles,
+                        effects.RemoveBackground,
+                        effects.BackgroundMode,
+                        effects.BackgroundColor,
+                        effects.BackgroundThreshold
                     );
                 }
                 finally
@@ -1390,7 +1398,11 @@ namespace MeesaMultisMaker
                     effects.DitherLevels,
                     effects.EdgeDarkening,
                     effects.ColorBands,
-                    effects.FillHoles
+                    effects.FillHoles,
+                    effects.RemoveBackground,
+                    effects.BackgroundMode,
+                    effects.BackgroundColor,
+                    effects.BackgroundThreshold
                 );
 
                 // Update object image
