@@ -18,6 +18,11 @@ namespace MeesaMultisMaker
         public event EventHandler ResetRequested;
         public event EventHandler<ImageEffectEventArgs> RealTimePreview; // New event for real-time preview
 
+        /// <summary>Forwarded desaturate eyedropper arming from the inner panel.</summary>
+        public event EventHandler EyedropperRequested;
+        /// <summary>Forwarded eyedropper cancel from the inner panel.</summary>
+        public event EventHandler EyedropperCancelled;
+
         public ImageEditingForm()
         {
             InitializeComponent();
@@ -33,10 +38,14 @@ namespace MeesaMultisMaker
             this.StartPosition = FormStartPosition.Manual;
             this.ShowInTaskbar = false;
             this.MinimumSize = new Size(320, 500);
+            this.KeyPreview = true;
+            this.KeyDown += ImageEditingForm_KeyDown;
 
             // Create the editing panel
             _editingPanel = new ImageEditingPanel();
             _editingPanel.Dock = DockStyle.Fill;
+            _editingPanel.EyedropperRequested += (s, e) => EyedropperRequested?.Invoke(this, EventArgs.Empty);
+            _editingPanel.EyedropperCancelled += (s, e) => EyedropperCancelled?.Invoke(this, EventArgs.Empty);
 
             // Wire up events
             _editingPanel.ApplyClicked += (s, e) =>
@@ -85,7 +94,12 @@ namespace MeesaMultisMaker
                 RemoveBackground = _editingPanel.RemoveBackgroundEnabled,
                 BackgroundMode = _editingPanel.BackgroundMode,
                 BackgroundColor = _editingPanel.BackgroundColor,
-                BackgroundThreshold = _editingPanel.BackgroundThreshold
+                BackgroundThreshold = _editingPanel.BackgroundThreshold,
+                DesaturateEnabled = _editingPanel.DesaturateEnabled,
+                DesaturateColor = _editingPanel.DesaturateColor,
+                DesaturateTolerance = _editingPanel.DesaturateTolerance,
+                SnapNearGray = _editingPanel.SnapNearGrayEnabled,
+                SnapTolerance = _editingPanel.SnapTolerance
             };
         }
 
@@ -94,9 +108,36 @@ namespace MeesaMultisMaker
             _editingPanel?.SetStatus(message, color);
         }
 
+        public string StatusText => _editingPanel?.StatusText ?? string.Empty;
+
         public void ResetControls()
         {
             _editingPanel?.ResetToDefaults();
+        }
+
+        public ImageEditingPanel EditingPanel => _editingPanel;
+
+        public bool IsEyedropperArmed => _editingPanel?.IsEyedropperArmed ?? false;
+
+        public void ConfirmEyedropper(Color picked)
+        {
+            _editingPanel?.ConfirmEyedropper(picked);
+        }
+
+        public void CancelEyedropper()
+        {
+            _editingPanel?.CancelEyedropper();
+        }
+
+        private void ImageEditingForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Esc cancels an armed eyedropper when this floating window has focus.
+            // Form1's own KeyDown covers the main canvas focus case.
+            if (e.KeyCode == Keys.Escape && IsEyedropperArmed)
+            {
+                CancelEyedropper();
+                e.Handled = true;
+            }
         }
 
         protected override bool ShowWithoutActivation
@@ -131,5 +172,12 @@ namespace MeesaMultisMaker
         public string BackgroundMode { get; set; }
         public Color BackgroundColor { get; set; }
         public int BackgroundThreshold { get; set; }
+
+        // Partial-hue prep (exact-gray authoring)
+        public bool DesaturateEnabled { get; set; }
+        public Color DesaturateColor { get; set; }
+        public int DesaturateTolerance { get; set; }
+        public bool SnapNearGray { get; set; }
+        public int SnapTolerance { get; set; }
     }
 }

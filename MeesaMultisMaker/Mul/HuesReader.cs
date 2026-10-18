@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace MeesaMultisMaker.Mul
 {
@@ -29,9 +30,16 @@ namespace MeesaMultisMaker.Mul
         private const int HUE_GROUP_SIZE = 708;   // 4 + 8*88
 
         private Color[][] _hues;
+        private string[] _hueNames;
+        private int _loadedHueCount;
         private bool _isLoaded;
 
         public bool IsLoaded => _isLoaded;
+
+        /// <summary>
+        /// Number of hue entries actually loaded (up to 3000*8).
+        /// </summary>
+        public int HueCount => _isLoaded ? _loadedHueCount : 0;
 
         /// <summary>
         /// Load hues.mul from the specified MUL folder.
@@ -51,6 +59,7 @@ namespace MeesaMultisMaker.Mul
                 {
                     int totalHues = MAX_HUES * 8;
                     _hues = new Color[totalHues][];
+                    _hueNames = new string[totalHues];
 
                     int hueIndex = 0;
 
@@ -75,13 +84,27 @@ namespace MeesaMultisMaker.Mul
 
                             reader.ReadUInt16(); // tableStart
                             reader.ReadUInt16(); // tableEnd
-                            reader.ReadBytes(20); // name
+                            byte[] nameBytes = reader.ReadBytes(20); // entry name
+                            string name = string.Empty;
+                            try
+                            {
+                                if (nameBytes != null && nameBytes.Length > 0)
+                                {
+                                    name = Encoding.ASCII.GetString(nameBytes);
+                                    int nul = name.IndexOf('\0');
+                                    if (nul >= 0) name = name.Substring(0, nul);
+                                    name = name.Trim();
+                                }
+                            }
+                            catch { name = string.Empty; }
 
                             _hues[hueIndex] = colors;
+                            _hueNames[hueIndex] = name ?? string.Empty;
                             hueIndex++;
                         }
                     }
 
+                    _loadedHueCount = hueIndex;
                     _isLoaded = hueIndex > 0;
                     System.Diagnostics.Debug.WriteLine($"HuesReader: Loaded {hueIndex} hues from hues.mul");
                     return _isLoaded;
@@ -90,6 +113,8 @@ namespace MeesaMultisMaker.Mul
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error loading hues.mul: {ex.Message}");
+                _hueNames = null;
+                _loadedHueCount = 0;
                 return false;
             }
         }
@@ -109,6 +134,35 @@ namespace MeesaMultisMaker.Mul
                 return null;
 
             return _hues[index];
+        }
+
+        /// <summary>
+        /// Get the stored 20-byte entry name for a hue. Hue IDs are 1-based;
+        /// ID 0 means "no hue". Returns empty string when hues.mul is absent,
+        /// the ID is out of range, or the entry name is empty.
+        /// </summary>
+        public string GetHueName(int hueId)
+        {
+            if (!_isLoaded || _hueNames == null)
+                return string.Empty;
+            int index = (hueId & 0x3FFF) - 1;
+            if (index < 0 || index >= _loadedHueCount || index >= _hueNames.Length)
+                return string.Empty;
+            return _hueNames[index] ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Get all stored hue entry names (1-based: result[0] is hue ID 1).
+        /// Returns an empty array when hues.mul is absent. The returned array
+        /// is a copy; mutating it does not affect the reader.
+        /// </summary>
+        public string[] GetHueNames()
+        {
+            if (!_isLoaded || _hueNames == null || _loadedHueCount <= 0)
+                return new string[0];
+            var copy = new string[_loadedHueCount];
+            Array.Copy(_hueNames, copy, _loadedHueCount);
+            return copy;
         }
 
         /// <summary>

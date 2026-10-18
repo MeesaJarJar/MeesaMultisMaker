@@ -81,6 +81,12 @@ namespace MeesaMultisMaker
                 }
             }
 
+            // Hue preview: one raw hue for the whole frame (paint-time only).
+            // 0 = preview off. Never mutates PlacedObject.Image; hued bitmaps
+            // come from GetHuedStaticImage (huedArtCache), imageCache untouched.
+            int huePreviewRawHue = GetHuePreviewRawHue();
+            bool huePreviewForceFull = IsHuePreviewForceFull();
+
             // Draw objects (UO painter's order - see GetPaintOrder: floors below
             // walls/roof at the same tile always draw first)
             foreach (var obj in GetPaintOrder())
@@ -106,39 +112,93 @@ namespace MeesaMultisMaker
                 float drawX = screenX - w / 2f;
                 float drawY = screenY - h + tileHalfHeight - zOffset;
 
+                // Hue preview: swap the source bitmap only (same rects, same
+                // skew/matrix handling below). Non-parsable GraphicIds
+                // (slices, PNG imports) keep their original image.
+                // Partial-mask overlay (when on) takes precedence and is
+                // computed per-frame from obj.Image via
+                // ImageEffects.BuildPartialHueMaskOverlay; paint-time only,
+                // never mutates PlacedObject.Image (overlay disposed after draw).
+                Image paintImage = obj.Image;
+                Bitmap maskOverlay = null;
                 try
                 {
-                    // Check if object has skew applied
-                    if (obj.HasSkew)
+                    bool showPartialMask = IsPartialHueMaskOn();
+                    if (showPartialMask)
                     {
-                        // Draw with perspective/skew transform
-                        DrawSkewedImage(g, obj, drawX, drawY, w, h);
+                        try
+                        {
+                            Bitmap srcBmp = obj.Image as Bitmap;
+                            Bitmap tmpSrc = null;
+                            try
+                            {
+                                if (srcBmp == null)
+                                {
+                                    tmpSrc = new Bitmap(obj.Image);
+                                    srcBmp = tmpSrc;
+                                }
+                                maskOverlay = MeesaMultisMaker.Utils.ImageEffects.BuildPartialHueMaskOverlay(srcBmp);
+                                if (maskOverlay != null)
+                                    paintImage = maskOverlay;
+                            }
+                            finally { try { tmpSrc?.Dispose(); } catch { } }
+                        }
+                        catch { maskOverlay = null; paintImage = obj.Image; }
                     }
-                    else if (obj.Rotation != 0f || obj.FlipHorizontal || obj.FlipVertical)
+                    else if (huePreviewRawHue != 0 && TryParseGraphicId(obj.GraphicId, out int hueArtId))
                     {
-                        // Apply rotation/flip transformations
-                        var savedState = g.Save();
-                        float centerX = drawX + w / 2f;
-                        float centerY = drawY + h / 2f;
+                        try
+                        {
+                            Image hued = GetHuedStaticImage(hueArtId, huePreviewRawHue, huePreviewForceFull);
+                            if (huesReader != null && huesReader.IsLoaded && hued != null && IsImageUsable(hued))
+                                paintImage = hued;
+                            else if ((huesReader == null || !huesReader.IsLoaded) && !_hueMissingWarned)
+                            {
+                                _hueMissingWarned = true;
+                                outputTextBox.AppendText("Note: hues.mul not found - hue preview unavailable (showing original art).\r\n");
+                            }
+                        }
+                        catch { paintImage = obj.Image; }
+                    }
 
-                        var matrix = new Matrix();
-                        matrix.Translate(centerX, centerY);
-                        if (obj.Rotation != 0f) matrix.Rotate(obj.Rotation);
-                        if (obj.FlipHorizontal || obj.FlipVertical)
-                            matrix.Scale(obj.FlipHorizontal ? -1 : 1, obj.FlipVertical ? -1 : 1);
-                        matrix.Translate(-centerX, -centerY);
-                        g.Transform = matrix;
-
-                        g.DrawImage(obj.Image, new RectangleF(drawX, drawY, w, h));
-                        g.Restore(savedState);
-                        matrix.Dispose();
-                    }
-                    else
+                    try
                     {
-                        g.DrawImage(obj.Image, new RectangleF(drawX, drawY, w, h));
+                        // Check if object has skew applied
+                        if (obj.HasSkew)
+                        {
+                            // Draw with perspective/skew transform
+                            DrawSkewedImage(g, obj, drawX, drawY, w, h, paintImage);
+                        }
+                        else if (obj.Rotation != 0f || obj.FlipHorizontal || obj.FlipVertical)
+                        {
+                            // Apply rotation/flip transformations
+                            var savedState = g.Save();
+                            float centerX = drawX + w / 2f;
+                            float centerY = drawY + h / 2f;
+
+                            var matrix = new Matrix();
+                            matrix.Translate(centerX, centerY);
+                            if (obj.Rotation != 0f) matrix.Rotate(obj.Rotation);
+                            if (obj.FlipHorizontal || obj.FlipVertical)
+                                matrix.Scale(obj.FlipHorizontal ? -1 : 1, obj.FlipVertical ? -1 : 1);
+                            matrix.Translate(-centerX, -centerY);
+                            g.Transform = matrix;
+
+                            g.DrawImage(paintImage, new RectangleF(drawX, drawY, w, h));
+                            g.Restore(savedState);
+                            matrix.Dispose();
+                        }
+                        else
+                        {
+                            g.DrawImage(paintImage, new RectangleF(drawX, drawY, w, h));
+                        }
                     }
+                    catch { continue; }
                 }
-                catch { continue; }
+                finally
+                {
+                    try { maskOverlay?.Dispose(); } catch { }
+                }
 
                 bool isSel = selectedObjects.Contains(obj);
                 if (isSel)
@@ -298,11 +358,14 @@ namespace MeesaMultisMaker
         }
 
         /// <summary>
-        /// Draw an image with skew/perspective distortion using the 4 corner points
+        /// Draw an image with skew/perspective distortion using the 4 corner points.
+        /// srcImage overrides obj.Image so hue preview (paint-time swap) works
+        /// through the skew path too; null falls back to obj.Image.
         /// </summary>
-        private void DrawSkewedImage(Graphics g, PlacedObject obj, float drawX, float drawY, float w, float h)
+        private void DrawSkewedImage(Graphics g, PlacedObject obj, float drawX, float drawY, float w, float h, Image srcImage = null)
         {
             var corners = GetSkewCorners(obj, drawX, drawY, w, h);
+            Image src = srcImage ?? obj.Image;
 
             // For perspective transform, we need to draw the image mapped to 4 arbitrary points
             // GDI+ doesn't support true perspective, so we use DrawImage with parallelogram (3 points)
@@ -319,13 +382,13 @@ namespace MeesaMultisMaker
                 };
 
                 g.InterpolationMode = InterpolationMode.Bilinear;
-                g.DrawImage(obj.Image, destPoints);
+                g.DrawImage(src, destPoints);
                 g.InterpolationMode = InterpolationMode.NearestNeighbor;
             }
             catch
             {
                 // Fallback to normal drawing if skew fails
-                g.DrawImage(obj.Image, new RectangleF(drawX, drawY, w, h));
+                g.DrawImage(src, new RectangleF(drawX, drawY, w, h));
             }
         }
 
@@ -1436,6 +1499,25 @@ namespace MeesaMultisMaker
             {
             if (e.Button == MouseButtons.Middle)
             { isPanning = true; panDragStart = e.Location; panOffsetStart = canvasOffset; designPictureBox.Capture = true; return; }
+
+            // Desaturate eyedropper: next left-click samples instead of selecting/dragging.
+            if (_desatEyedropperArmed && e.Button == MouseButtons.Left && _imageEditingForm != null)
+            {
+                Color picked;
+                if (TryPickDesatColorFromCanvas(e.Location, out picked))
+                {
+                    _imageEditingForm.ConfirmEyedropper(picked);
+                    DisarmCanvasEyedropper(
+                        $"Picked RGB({picked.R},{picked.G},{picked.B})", Color.Green);
+                    designPictureBox.Invalidate();
+                }
+                else
+                {
+                    _imageEditingForm.SetStatus(
+                        "Transparent pixel — click another pixel (Esc cancels)", Color.Orange);
+                }
+                return;
+            }
 
             if (isSliceMode)
             {

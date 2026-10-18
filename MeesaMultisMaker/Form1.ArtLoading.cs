@@ -60,6 +60,9 @@ namespace MeesaMultisMaker
                 // Initialize show empty slots checkbox
                 InitializeShowEmptySlotsCheckbox();
 
+                // Initialize canvas hue-preview controls (paint-time only)
+                InitializeHuePreviewControls();
+
                 // Load from AppConfig first, then fall back to legacy settings
                 var config = AppConfig.Instance;
 
@@ -113,6 +116,9 @@ namespace MeesaMultisMaker
                     MessageBox.Show($"No art files found.\n\nPlease configure the MUL folder path in Settings.\nThe folder must contain either:\n- art.mul and artidx.mul (OSI style)\n- artLegacyMUL.uop (UOForever style)\n- Tecmo Expanded Art (art.mul + artidx.mul with 262K entries)",
                         "Art Files Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+
+                // Load hues.mul via the same mul folder resolution (MapViewer pattern)
+                EnsureHuesLoaded();
 
                 // Check for updates on startup (async, non-blocking)
                 CheckForUpdatesOnStartup();
@@ -236,6 +242,7 @@ namespace MeesaMultisMaker
             {
                 isLoading = true;
                 imageCache.Clear();
+                ClearHuedArtCache();
                 idToPath.Clear();
                 validStaticIds.Clear();
                 validStaticIdSet.Clear();
@@ -261,6 +268,8 @@ namespace MeesaMultisMaker
                         statusLabel_SetText($"Note: tiledata.mul not found at {tiledataPath} - item names unavailable.");
                     }
                 }
+
+                EnsureHuesLoaded();
 
                 statusLabel_SetText("Scanning art.mul for valid items...");
                 Application.DoEvents();
@@ -357,6 +366,7 @@ namespace MeesaMultisMaker
             {
                 isLoading = true;
                 imageCache.Clear();
+                ClearHuedArtCache();
                 idToPath.Clear();
                 validStaticIdsInt.Clear();
                 validStaticIdSetInt.Clear();
@@ -389,6 +399,8 @@ namespace MeesaMultisMaker
                         statusLabel_SetText($"Note: tiledata.mul not found at {tiledataPath} - item names unavailable.");
                     }
                 }
+
+                EnsureHuesLoaded();
 
                 statusLabel_SetText("Scanning Tecmo Expanded art.mul for valid items...");
                 Application.DoEvents();
@@ -471,6 +483,7 @@ namespace MeesaMultisMaker
             {
                 isLoading = true;
                 imageCache.Clear();
+                ClearHuedArtCache();
                 idToPath.Clear();
                 validStaticIds.Clear();
                 validStaticIdSet.Clear();
@@ -496,6 +509,8 @@ namespace MeesaMultisMaker
                         statusLabel_SetText($"Note: tiledata.mul not found at {tiledataPath} - item names unavailable.");
                     }
                 }
+
+                EnsureHuesLoaded();
 
                 statusLabel_SetText("Loading artLegacyMUL.uop index (UOForever mode)...");
                 Application.DoEvents();
@@ -623,7 +638,116 @@ namespace MeesaMultisMaker
         {
             return LoadStaticItemImage((int)itemId);
 }
-        
+
+        /// <summary>
+        /// Load hues.mul via AppConfig.FindMulFolder (mirrors MapViewerForm.cs:133-134 + MapViewerForm.ArtLoading.cs:33-36).
+        /// Reloads when the mul folder changes; clears the hued cache on folder switch.
+        /// </summary>
+        private void EnsureHuesLoaded()
+        {
+            var config = AppConfig.Instance;
+            string mulFolder = config.FindMulFolder();
+            if (string.IsNullOrEmpty(mulFolder) || !Directory.Exists(mulFolder))
+                return;
+            if (huesReader.IsLoaded && string.Equals(loadedHuesFolder, mulFolder, StringComparison.OrdinalIgnoreCase))
+                return;
+            // Mul folder changed (or first load) — drop stale hued bitmaps.
+            ClearHuedArtCache();
+            if (huesReader.Load(mulFolder))
+                loadedHuesFolder = mulFolder;
+        }
+
+        /// <summary>
+        /// Disposes cached hued bitmaps and clears the cache.
+        /// Call on art reload or mul folder change.
+        /// </summary>
+        private void ClearHuedArtCache()
+        {
+            foreach (var kvp in huedArtCache)
+            {
+                try { kvp.Value?.Dispose(); } catch { }
+            }
+            huedArtCache.Clear();
+        }
+
+        /// <summary>
+        /// Invalidates the hued bitmap cache (hue change or art reload).
+        /// </summary>
+        internal void InvalidateHuedArtCache()
+        {
+            ClearHuedArtCache();
+        }
+
+        /// <summary>
+        /// Splits a raw hue value into (hueId, partial).
+        /// Bit 0x8000 set => partial=true, id=hue&amp;0x3FFF.
+        /// When 0x8000 is absent, falls back to TileFlag.PartialHue (TileDataReader.cs:33),
+        /// unless forceFull is true, which forces partial=false (Full preview mode).
+        /// Returns false when hueId==0 (no hue — caller should use the original image).
+        /// </summary>
+        private bool SplitRawHue(int rawHue, int artId, out int hueId, out bool partialHue, bool forceFull = false)
+        {
+            hueId = 0;
+            partialHue = false;
+            if (rawHue == 0)
+                return false;
+            hueId = rawHue & 0x3FFF;
+            if (hueId == 0)
+                return false;
+            if (forceFull)
+            {
+                partialHue = false;
+            }
+            else if ((rawHue & 0x8000) != 0)
+            {
+                partialHue = true;
+            }
+            else if (tileDataReader != null && tileDataReader.IsLoaded && artId >= 0 && artId <= 0xFFFF)
+            {
+                var td = tileDataReader.GetItemTile((ushort)artId);
+                if (td != null)
+                    partialHue = td.Flags.HasFlag(TileFlag.PartialHue);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Returns a hued copy of the static art, cached by (artId, hueId, partial).
+        /// Hue 0 returns the original image. Mirrors MapViewerForm.Rendering.cs:285-293.
+        /// forceFull=true forces partial=false (Full preview mode); the resolved partial
+        /// is part of the cache key, so forced-full vs auto-partial never collide.
+        /// </summary>
+        internal Image GetHuedStaticImage(int artId, int rawHue, bool forceFull = false)
+        {
+            Image baseImage = LoadStaticItemImage(artId);
+            if (baseImage == null)
+                return null;
+            if (!SplitRawHue(rawHue, artId, out int hueId, out bool partialHue, forceFull))
+                return baseImage;
+            if (huesReader == null || !huesReader.IsLoaded)
+            {
+                EnsureHuesLoaded();
+                if (huesReader == null || !huesReader.IsLoaded)
+                    return baseImage;
+            }
+            var key = (artId, hueId, partialHue);
+            if (!huedArtCache.TryGetValue(key, out var cachedHued))
+            {
+                cachedHued = huesReader.ApplyHue(baseImage, hueId, partialHue);
+                if (cachedHued != null)
+                    huedArtCache[key] = cachedHued;
+            }
+            return cachedHued ?? baseImage;
+        }
+
+        /// <summary>
+        /// Overload for ushort art IDs.
+        /// </summary>
+        internal Image GetHuedStaticImage(ushort artId, int rawHue, bool forceFull = false)
+        {
+            return GetHuedStaticImage((int)artId, rawHue, forceFull);
+        }
+
         /// <summary>
         /// Get the current item ID for palette index
         /// </summary>
@@ -685,6 +809,7 @@ namespace MeesaMultisMaker
             {
                 isLoading = true;
                 imageCache.Clear();
+                ClearHuedArtCache();
                 idToPath.Clear();
 
                 // Use MUL, UOP, or Tecmo files

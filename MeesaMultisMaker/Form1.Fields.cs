@@ -31,6 +31,15 @@ namespace MeesaMultisMaker
 
         // TileData reader for item names and properties
         private readonly TileDataReader tileDataReader = new TileDataReader();
+
+        // Hue color palettes (hues.mul) — mirrors MapViewerForm.cs:133-134
+        private readonly HuesReader huesReader = new HuesReader();
+        private string loadedHuesFolder = null;
+
+        // Hued bitmap cache keyed by (artId, hueId, partial) — mirrors MapViewerForm.Rendering.cs:285-293
+        private readonly Dictionary<(int artId, int hueId, bool partial), Bitmap> huedArtCache
+            = new Dictionary<(int, int, bool), Bitmap>();
+
         // Tooltip for showing TileData properties on hover
         private ToolTip paletteToolTip;
         private int lastHoveredIndex = -1;
@@ -140,5 +149,25 @@ namespace MeesaMultisMaker
         private NumericUpDown offsetYNum;
         private bool _offsetSync;
         private System.Windows.Forms.Timer _offsetTimer;
+
+        // Canvas hue-preview controls (paint-time only; never mutates PlacedObject.Image).
+        // huePreviewIdNum: 0 = off. Mode Auto passes the hue ID bare so
+        // SplitRawHue falls back to TileFlag.PartialHue; Partial adds 0x8000;
+        // Full passes the hue ID bare plus forceFull=true to force partial=false.
+        private CheckBox huePreviewCheckBox;
+        private NumericUpDown huePreviewIdNum;
+        private ComboBox huePreviewModeCombo;
+        private bool _hueMissingWarned;
+
+        // Partial-hue mask overlay toggle (paint-time only; never mutates
+        // PlacedObject.Image). When on, non-gray pixels are tinted magenta
+        // per-frame via ImageEffects.BuildPartialHueMaskOverlay.
+        private CheckBox partialHueMaskCheckBox;
+
+        // Hue name picker (dropdown showing "id - name", still storing the
+        // numeric ID in huePreviewIdNum). Falls back to bare IDs when
+        // hues.mul is absent or names are empty.
+        private ComboBox huePreviewNameCombo;
+        private bool _hueNameSync;
     }
 }

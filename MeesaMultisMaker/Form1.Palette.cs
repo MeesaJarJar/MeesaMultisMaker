@@ -1138,5 +1138,278 @@ namespace MeesaMultisMaker
                 }
             }
         }
+
+        #region Hue Preview (canvas paint-time only)
+
+        /// <summary>
+        /// Builds the hue-preview row on controlsPanel (below the Z-filter row),
+        /// following the programmatic-control pattern of InitializePaletteSizeFilters.
+        /// Preview applies at paint time via GetHuedStaticImage / huedArtCache;
+        /// PlacedObject.Image is never mutated and imageCache is never cleared.
+        /// Second row holds the partial-hue mask toggle + hue name picker.
+        /// </summary>
+        private void InitializeHuePreviewControls()
+        {
+            if (controlsPanel == null || huePreviewCheckBox != null) return; // already built
+            if (controlsPanel.Height < 232) controlsPanel.Height = 232;
+
+            const int top = 178;
+            int labelTop = top + 3;
+
+            huePreviewCheckBox = new CheckBox
+            {
+                Text = "Hue Preview",
+                Left = 10,
+                Top = top,
+                Width = 100,
+                Height = 22
+            };
+            HolographicTheme.ApplyToCheckBox(huePreviewCheckBox);
+            huePreviewCheckBox.CheckedChanged += (s, e) => { try { designPictureBox?.Invalidate(); } catch { } };
+            controlsPanel.Controls.Add(huePreviewCheckBox);
+
+            var hueIdLabel = new Label { Text = "ID:", Left = 115, Top = labelTop, Width = 25, Height = 20 };
+            HolographicTheme.ApplyToLabel(hueIdLabel);
+            controlsPanel.Controls.Add(hueIdLabel);
+
+            huePreviewIdNum = new NumericUpDown
+            {
+                Left = 140,
+                Top = top,
+                Width = 65,
+                Height = 22,
+                Minimum = 0,
+                Maximum = 3000,
+                Value = 0
+            };
+            HolographicTheme.ApplyToNumericUpDown(huePreviewIdNum);
+            huePreviewIdNum.ValueChanged += (s, e) =>
+            {
+                try
+                {
+                    SyncHueNameComboSelection();
+                    designPictureBox?.Invalidate();
+                }
+                catch { }
+            };
+            controlsPanel.Controls.Add(huePreviewIdNum);
+
+            var hueModeLabel = new Label { Text = "Mode:", Left = 212, Top = labelTop, Width = 42, Height = 20 };
+            HolographicTheme.ApplyToLabel(hueModeLabel);
+            controlsPanel.Controls.Add(hueModeLabel);
+
+            huePreviewModeCombo = new ComboBox
+            {
+                Left = 254,
+                Top = top,
+                Width = 85,
+                Height = 22,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            huePreviewModeCombo.Items.AddRange(new object[] { "Auto", "Full", "Partial" });
+            huePreviewModeCombo.SelectedIndex = 0;
+            HolographicTheme.ApplyToComboBox(huePreviewModeCombo);
+            huePreviewModeCombo.SelectedIndexChanged += (s, e) => { try { designPictureBox?.Invalidate(); } catch { } };
+            controlsPanel.Controls.Add(huePreviewModeCombo);
+
+            // Second row: partial-hue mask overlay toggle + hue name picker.
+            const int top2 = 202;
+            int labelTop2 = top2 + 3;
+
+            partialHueMaskCheckBox = new CheckBox
+            {
+                Text = "Partial Mask",
+                Left = 10,
+                Top = top2,
+                Width = 105,
+                Height = 22
+            };
+            HolographicTheme.ApplyToCheckBox(partialHueMaskCheckBox);
+            partialHueMaskCheckBox.CheckedChanged += (s, e) => { try { designPictureBox?.Invalidate(); } catch { } };
+            controlsPanel.Controls.Add(partialHueMaskCheckBox);
+
+            var hueNameLabel = new Label { Text = "Name:", Left = 120, Top = labelTop2, Width = 45, Height = 20 };
+            HolographicTheme.ApplyToLabel(hueNameLabel);
+            controlsPanel.Controls.Add(hueNameLabel);
+
+            huePreviewNameCombo = new ComboBox
+            {
+                Left = 165,
+                Top = top2,
+                Width = 220,
+                Height = 22,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            HolographicTheme.ApplyToComboBox(huePreviewNameCombo);
+            huePreviewNameCombo.SelectedIndexChanged += HuePreviewNameCombo_SelectedIndexChanged;
+            huePreviewNameCombo.DropDown += (s, e) => { try { RefreshHueNameCombo(); } catch { } };
+            controlsPanel.Controls.Add(huePreviewNameCombo);
+
+            var hueTip = new ToolTip
+            {
+                AutoPopDelay = 5000,
+                InitialDelay = 500,
+                ReshowDelay = 200,
+                ShowAlways = true
+            };
+            hueTip.SetToolTip(huePreviewCheckBox, "Enable canvas hue preview (paint-time only, does not modify placed art). Requires hues.mul in the MUL folder.");
+            hueTip.SetToolTip(huePreviewIdNum, "Hue ID 1-3000 (0 = off). Preview is cached in huedArtCache.");
+            hueTip.SetToolTip(huePreviewModeCombo, "Auto: hue ID as-is, gray-only vs full decided by the TileData PartialHue flag. Partial: force gray-only (0x8000). Full: force full recolor (ignore PartialHue flag).");
+            hueTip.SetToolTip(partialHueMaskCheckBox, "Partial-hue mask overlay (paint-time only): exact-gray pixels (WILL dye) stay as-is, non-gray pixels (will NOT dye) are tinted magenta. Never mutates PlacedObject.Image.");
+            hueTip.SetToolTip(huePreviewNameCombo, "Pick a hue by name (shows \"id - name\"). Still stores the numeric ID in the ID box. Falls back to bare IDs when hues.mul is absent or names are empty.");
+
+            RefreshHueNameCombo();
+        }
+
+        /// <summary>
+        /// ComboBox item holding a hue ID plus its display text ("id - name"
+        /// or bare "id"). ToString drives the visible text; the numeric ID is
+        /// read back from HueId so names never corrupt the stored ID.
+        /// </summary>
+        private sealed class HueComboItem
+        {
+            public int HueId;
+            public string Display;
+            public override string ToString() { return Display ?? HueId.ToString(); }
+        }
+
+        /// <summary>
+        /// (Re)populates the hue name picker. Falls back to bare IDs when
+        /// hues.mul is absent or names are empty. Preserves the current
+        /// numeric ID selection.
+        /// </summary>
+        private void RefreshHueNameCombo()
+        {
+            if (huePreviewNameCombo == null) return;
+            try { EnsureHuesLoaded(); } catch { }
+            _hueNameSync = true;
+            try
+            {
+                int currentId = 0;
+                try { currentId = huePreviewIdNum != null ? (int)huePreviewIdNum.Value : 0; } catch { }
+                if (currentId < 0) currentId = 0;
+                if (currentId > 3000) currentId = 3000;
+
+                huePreviewNameCombo.BeginUpdate();
+                try
+                {
+                    huePreviewNameCombo.Items.Clear();
+                    int selectIndex = 0;
+                    for (int id = 0; id <= 3000; id++)
+                    {
+                        string display;
+                        if (id == 0)
+                        {
+                            display = "0 - (off)";
+                        }
+                        else
+                        {
+                            string nm = string.Empty;
+                            try
+                            {
+                                if (huesReader != null && huesReader.IsLoaded)
+                                    nm = huesReader.GetHueName(id);
+                            }
+                            catch { nm = string.Empty; }
+                            display = string.IsNullOrEmpty(nm) ? id.ToString() : (id + " - " + nm);
+                        }
+                        var item = new HueComboItem { HueId = id, Display = display };
+                        huePreviewNameCombo.Items.Add(item);
+                        if (id == currentId) selectIndex = id;
+                    }
+                    if (selectIndex >= 0 && selectIndex < huePreviewNameCombo.Items.Count)
+                        huePreviewNameCombo.SelectedIndex = selectIndex;
+                }
+                finally
+                {
+                    try { huePreviewNameCombo.EndUpdate(); } catch { }
+                }
+            }
+            finally { _hueNameSync = false; }
+        }
+
+        private void HuePreviewNameCombo_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_hueNameSync) return;
+            try
+            {
+                var item = huePreviewNameCombo?.SelectedItem as HueComboItem;
+                if (item == null || huePreviewIdNum == null) return;
+                int id = item.HueId;
+                if (id < (int)huePreviewIdNum.Minimum) id = (int)huePreviewIdNum.Minimum;
+                if (id > (int)huePreviewIdNum.Maximum) id = (int)huePreviewIdNum.Maximum;
+                if ((int)huePreviewIdNum.Value != id)
+                    huePreviewIdNum.Value = id;
+                else
+                    try { designPictureBox?.Invalidate(); } catch { }
+            }
+            catch { }
+        }
+
+        private void SyncHueNameComboSelection()
+        {
+            if (_hueNameSync || huePreviewNameCombo == null || huePreviewIdNum == null) return;
+            _hueNameSync = true;
+            try
+            {
+                int id = (int)huePreviewIdNum.Value;
+                if (id >= 0 && id < huePreviewNameCombo.Items.Count)
+                {
+                    if (huePreviewNameCombo.SelectedIndex != id)
+                        huePreviewNameCombo.SelectedIndex = id;
+                }
+            }
+            catch { }
+            finally { _hueNameSync = false; }
+        }
+
+        /// <summary>
+        /// True when the partial-hue mask overlay toggle is on. The canvas
+        /// paint path checks this per frame; overlay is paint-time only.
+        /// </summary>
+        private bool IsPartialHueMaskOn()
+        {
+            try { return partialHueMaskCheckBox != null && partialHueMaskCheckBox.Checked; }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Raw hue for GetHuedStaticImage: hueId, plus 0x8000 when mode==Partial.
+        /// Auto/Full pass hueId bare; Full additionally forces full recolor via
+        /// forceFull (see IsHuePreviewForceFull), Auto falls back to TileFlag.PartialHue.
+        /// Returns 0 when preview is off (unchecked or ID 0).
+        /// </summary>
+        private int GetHuePreviewRawHue()
+        {
+            try
+            {
+                if (huePreviewCheckBox == null || !huePreviewCheckBox.Checked) return 0;
+                if (huePreviewIdNum == null) return 0;
+                int hueId = (int)huePreviewIdNum.Value;
+                if (hueId <= 0) return 0;
+                string mode = huePreviewModeCombo?.SelectedItem as string;
+                if (string.Equals(mode, "Partial", StringComparison.OrdinalIgnoreCase))
+                    return hueId | 0x8000;
+                return hueId; // Auto + Full
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>
+        /// True when hue preview mode==Full: caller must pass forceFull=true to
+        /// GetHuedStaticImage so partial=false is forced (paint-time only).
+        /// </summary>
+        private bool IsHuePreviewForceFull()
+        {
+            try
+            {
+                if (huePreviewCheckBox == null || !huePreviewCheckBox.Checked) return false;
+                string mode = huePreviewModeCombo?.SelectedItem as string;
+                return string.Equals(mode, "Full", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        #endregion
     }
 }

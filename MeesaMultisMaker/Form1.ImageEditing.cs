@@ -18,6 +18,8 @@ namespace MeesaMultisMaker
     public partial class Form1
     {
         private ImageEditingForm _imageEditingForm;
+        private bool _desatEyedropperArmed;
+        private Cursor _desatPrevCursor;
 
         /// <summary>
         /// Initialize the Image Editing Form (floating window)
@@ -26,6 +28,150 @@ namespace MeesaMultisMaker
         {
             // Don't create it yet - only when user opens it
             _imageEditingForm = null;
+            _desatEyedropperArmed = false;
+        }
+
+        /// <summary>
+        /// Eyedropper arming from the floating Image Editing window: next left-click
+        /// samples instead of selecting/dragging. Esc or re-clicking Pick cancels.
+        /// </summary>
+        private void ImageEditingEyedropperRequested(object sender, EventArgs e)
+        {
+            _desatEyedropperArmed = true;
+            try
+            {
+                if (designPictureBox != null)
+                {
+                    _desatPrevCursor = designPictureBox.Cursor;
+                    designPictureBox.Cursor = Cursors.Cross;
+                    try { designPictureBox.Focus(); } catch { }
+                }
+            }
+            catch { }
+            _imageEditingForm?.SetStatus("Click canvas to pick color — Esc cancels",
+                Color.FromArgb(100, 200, 255));
+        }
+
+        private void ImageEditingEyedropperCancelled(object sender, EventArgs e)
+        {
+            DisarmCanvasEyedropper("Eyedropper cancelled", Color.FromArgb(100, 200, 255));
+        }
+
+        private void DisarmCanvasEyedropper(string status, Color? color)
+        {
+            _desatEyedropperArmed = false;
+            try
+            {
+                if (designPictureBox != null)
+                    designPictureBox.Cursor = _desatPrevCursor ?? Cursors.Default;
+            }
+            catch { }
+            _desatPrevCursor = null;
+            if (status != null)
+                _imageEditingForm?.SetStatus(status, color ?? Color.FromArgb(100, 200, 255));
+        }
+
+        private void CancelCanvasEyedropper()
+        {
+            try { _imageEditingForm?.CancelEyedropper(); }
+            catch { _desatEyedropperArmed = false; }
+            if (_desatEyedropperArmed)
+                DisarmCanvasEyedropper("Eyedropper cancelled", Color.FromArgb(100, 200, 255));
+        }
+
+        /// <summary>
+        /// Topmost-first sampling via GetPaintOrder. Reuses the same draw-position
+        /// math as DesignPictureBox_Paint: plain translation+scale path is exact,
+        /// rotation/flip matrix path goes through Matrix.Invert, skew path uses a
+        /// best-effort plain-rect fallback. Fully-transparent pixels are skipped
+        /// (caller stays armed).
+        /// </summary>
+        private bool TryPickDesatColorFromCanvas(Point mouse, out Color picked)
+        {
+            picked = Color.Empty;
+            int minZFilter = minZTrackBar?.Value ?? -127;
+            int maxZFilter = maxZTrackBar?.Value ?? 127;
+
+            foreach (var obj in GetPaintOrder().Reverse())
+            {
+                if (obj.Hidden) continue;
+                if (!IsImageUsable(obj.Image)) continue;
+                if (obj.Z < minZFilter || obj.Z > maxZFilter) continue;
+
+                float drawX, drawY, w, h;
+                GetObjectDrawPosition(obj, out drawX, out drawY, out w, out h);
+                if (w <= 0 || h <= 0) continue;
+
+                float imgXF, imgYF;
+                if (obj.HasSkew)
+                {
+                    // Best-effort plain-rect fallback for the skew path.
+                    float objScale = obj.Scale * zoom;
+                    if (objScale <= 0) continue;
+                    imgXF = (mouse.X - drawX) / objScale;
+                    imgYF = (mouse.Y - drawY) / objScale;
+                }
+                else if (obj.Rotation != 0f || obj.FlipHorizontal || obj.FlipVertical)
+                {
+                    float centerX = drawX + w / 2f;
+                    float centerY = drawY + h / 2f;
+                    var pts = new PointF[] { new PointF(mouse.X, mouse.Y) };
+                    try
+                    {
+                        using (var matrix = new Matrix())
+                        {
+                            matrix.Translate(centerX, centerY);
+                            if (obj.Rotation != 0f) matrix.Rotate(obj.Rotation);
+                            if (obj.FlipHorizontal || obj.FlipVertical)
+                                matrix.Scale(obj.FlipHorizontal ? -1 : 1, obj.FlipVertical ? -1 : 1);
+                            matrix.Translate(-centerX, -centerY);
+                            matrix.Invert();
+                            matrix.TransformPoints(pts);
+                        }
+                    }
+                    catch { continue; }
+                    float objScale = obj.Scale * zoom;
+                    if (objScale <= 0) continue;
+                    imgXF = (pts[0].X - drawX) / objScale;
+                    imgYF = (pts[0].Y - drawY) / objScale;
+                }
+                else
+                {
+                    float objScale = obj.Scale * zoom;
+                    if (objScale <= 0) continue;
+                    imgXF = (mouse.X - drawX) / objScale;
+                    imgYF = (mouse.Y - drawY) / objScale;
+                }
+
+                int imgX = (int)Math.Floor(imgXF);
+                int imgY = (int)Math.Floor(imgYF);
+                int iw, ih;
+                try { iw = obj.Image.Width; ih = obj.Image.Height; }
+                catch { continue; }
+                if (imgX < 0 || imgY < 0 || imgX >= iw || imgY >= ih) continue;
+
+                Color px;
+                try
+                {
+                    var bmp = obj.Image as Bitmap;
+                    if (bmp != null)
+                        px = bmp.GetPixel(imgX, imgY);
+                    else
+                    {
+                        using (var tmp = new Bitmap(obj.Image))
+                            px = tmp.GetPixel(
+                                Math.Max(0, Math.Min(tmp.Width - 1, imgX)),
+                                Math.Max(0, Math.Min(tmp.Height - 1, imgY)));
+                    }
+                }
+                catch { continue; }
+
+                if (px.A == 0) continue; // transparent: look through to art underneath
+                picked = Color.FromArgb(px.R, px.G, px.B);
+                return true;
+            }
+
+            return false;
         }
 
     }
@@ -58,6 +204,8 @@ namespace MeesaMultisMaker
         private Label infoLabel;
         private AISettingsPanel aiSettingsPanel;
         private ImageEditingPanel imageEditingPanel;
+        private bool _texEyedropperArmed;
+        private Cursor _texPrevCursor;
 
         public TextureEditorForm()
         {
@@ -92,6 +240,8 @@ namespace MeesaMultisMaker
             this.Height = 900;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = HolographicTheme.DarkBackground;
+            this.KeyPreview = true;
+            this.KeyDown += TextureEditorForm_KeyDown;
 
             mainSplit = new SplitContainer
             {
@@ -235,6 +385,8 @@ namespace MeesaMultisMaker
             imageEditingPanel.ApplyClicked += (s, e) => ApplyImageEffectsToSelected();
             imageEditingPanel.ApplyToAllSelectedClicked += (s, e) => ApplyImageEffectsToSelected(applyToAllSelected: true);
             imageEditingPanel.ResetClicked += (s, e) => RestoreSelectedOriginal();
+            imageEditingPanel.EyedropperRequested += TextureEyedropperRequested;
+            imageEditingPanel.EyedropperCancelled += TextureEyedropperCancelled;
             imageFxTab.Controls.Add(imageEditingPanel);
 
             sidebarTabs.TabPages.Add(aiTab);
@@ -246,6 +398,7 @@ namespace MeesaMultisMaker
                 BackColor = Color.FromArgb(35, 35, 40),
                 SizeMode = PictureBoxSizeMode.Zoom
             };
+            previewBox.MouseDown += PreviewBox_EyedropperMouseDown;
 
             var statusPanel = new Panel
             {
@@ -625,7 +778,11 @@ namespace MeesaMultisMaker
                         imageEditingPanel.RemoveBackgroundEnabled,
                         imageEditingPanel.BackgroundMode,
                         imageEditingPanel.BackgroundColor,
-                        imageEditingPanel.BackgroundThreshold
+                        imageEditingPanel.BackgroundThreshold,
+                        imageEditingPanel.DesaturateEnabled ? (Color?)imageEditingPanel.DesaturateColor : null,
+                        imageEditingPanel.DesaturateTolerance,
+                        imageEditingPanel.SnapNearGrayEnabled,
+                        imageEditingPanel.SnapTolerance
                     );
                     source.Dispose();
 
@@ -1118,6 +1275,118 @@ namespace MeesaMultisMaker
             }
             statusLabel.Text = message;
         }
+
+        private void TextureEditorForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Esc cancels an armed desaturate eyedropper.
+            if (e.KeyCode == Keys.Escape && _texEyedropperArmed)
+            {
+                try { imageEditingPanel?.CancelEyedropper(); }
+                catch { _texEyedropperArmed = false; }
+                if (_texEyedropperArmed)
+                    DisarmTextureEyedropper("Eyedropper cancelled");
+                e.Handled = true;
+            }
+        }
+
+        private void TextureEyedropperRequested(object sender, EventArgs e)
+        {
+            _texEyedropperArmed = true;
+            try
+            {
+                if (previewBox != null)
+                {
+                    _texPrevCursor = previewBox.Cursor;
+                    previewBox.Cursor = Cursors.Cross;
+                    try { previewBox.Focus(); } catch { }
+                }
+            }
+            catch { }
+            SetStatus("Click preview to pick color — Esc cancels");
+        }
+
+        private void TextureEyedropperCancelled(object sender, EventArgs e)
+        {
+            DisarmTextureEyedropper("Eyedropper cancelled");
+        }
+
+        private void DisarmTextureEyedropper(string status)
+        {
+            _texEyedropperArmed = false;
+            try
+            {
+                if (previewBox != null)
+                    previewBox.Cursor = _texPrevCursor ?? Cursors.Default;
+            }
+            catch { }
+            _texPrevCursor = null;
+            if (status != null)
+                SetStatus(status);
+        }
+
+        private void PreviewBox_EyedropperMouseDown(object sender, MouseEventArgs e)
+        {
+            if (!_texEyedropperArmed || e.Button != MouseButtons.Left)
+                return;
+            Color picked;
+            if (TryPickDesatColorFromPreview(e.Location, out picked))
+            {
+                imageEditingPanel.ConfirmEyedropper(picked);
+                DisarmTextureEyedropper($"Picked RGB({picked.R},{picked.G},{picked.B})");
+            }
+            else
+            {
+                SetStatus("Transparent pixel — click another pixel (Esc cancels)");
+            }
+        }
+
+        /// <summary>
+        /// Direct image-pixel lookup from the Zoom preview display, accounting
+        /// for SizeMode.Zoom letterboxing. Transparent clicks return false so
+        /// the eyedropper stays armed.
+        /// </summary>
+        private bool TryPickDesatColorFromPreview(Point mouse, out Color picked)
+        {
+            picked = Color.Empty;
+            try
+            {
+                var img = previewBox?.Image;
+                if (img == null) return false;
+                int iw, ih;
+                try { iw = img.Width; ih = img.Height; }
+                catch { return false; }
+                if (iw <= 0 || ih <= 0) return false;
+
+                Size cb = previewBox.ClientSize;
+                if (cb.Width <= 0 || cb.Height <= 0) return false;
+                float scale = Math.Min((float)cb.Width / iw, (float)cb.Height / ih);
+                if (scale <= 0) return false;
+                float dw = iw * scale;
+                float dh = ih * scale;
+                float ox = (cb.Width - dw) / 2f;
+                float oy = (cb.Height - dh) / 2f;
+
+                int imgX = (int)Math.Floor((mouse.X - ox) / scale);
+                int imgY = (int)Math.Floor((mouse.Y - oy) / scale);
+                if (imgX < 0 || imgY < 0 || imgX >= iw || imgY >= ih) return false;
+
+                Color px;
+                var bmp = img as Bitmap;
+                if (bmp != null)
+                    px = bmp.GetPixel(imgX, imgY);
+                else
+                {
+                    using (var tmp = new Bitmap(img))
+                        px = tmp.GetPixel(
+                            Math.Max(0, Math.Min(tmp.Width - 1, imgX)),
+                            Math.Max(0, Math.Min(tmp.Height - 1, imgY)));
+                }
+                if (px.A == 0) return false;
+                picked = Color.FromArgb(px.R, px.G, px.B);
+                return true;
+            }
+            catch { return false; }
+        }
     }
 }
 
@@ -1143,8 +1412,10 @@ namespace MeesaMultisMaker
                 _imageEditingForm.ApplyEffectsToAll += ImageEditingForm_ApplyEffectsToAll;
                 _imageEditingForm.ResetRequested += ImageEditingForm_ResetRequested;
                 _imageEditingForm.RealTimePreview += ImageEditingForm_RealTimePreview;
+                _imageEditingForm.EyedropperRequested += ImageEditingEyedropperRequested;
+                _imageEditingForm.EyedropperCancelled += ImageEditingEyedropperCancelled;
 
-                _imageEditingForm.FormClosed += (s, e) => { _imageEditingForm = null; };
+                _imageEditingForm.FormClosed += (s, e) => { _desatEyedropperArmed = false; _imageEditingForm = null; };
                 _imageEditingForm.Show(this);
 
                 // Update status with selection count
@@ -1263,7 +1534,12 @@ namespace MeesaMultisMaker
         private void ImageEditingForm_RealTimePreview(object sender, ImageEffectEventArgs e)
         {
             if (selectedObjects.Count == 0)
+            {
+                const string hint = "Select items on the canvas to preview effects";
+                if (_imageEditingForm?.StatusText != hint)
+                    _imageEditingForm?.SetStatus(hint, Color.Orange);
                 return;
+            }
 
             // Apply to ALL selected objects for real-time preview
             foreach (var obj in selectedObjects.ToList())
@@ -1323,7 +1599,11 @@ namespace MeesaMultisMaker
                         effects.RemoveBackground,
                         effects.BackgroundMode,
                         effects.BackgroundColor,
-                        effects.BackgroundThreshold
+                        effects.BackgroundThreshold,
+                        effects.DesaturateEnabled ? (Color?)effects.DesaturateColor : null,
+                        effects.DesaturateTolerance,
+                        effects.SnapNearGray,
+                        effects.SnapTolerance
                     );
                 }
                 finally
@@ -1402,7 +1682,11 @@ namespace MeesaMultisMaker
                     effects.RemoveBackground,
                     effects.BackgroundMode,
                     effects.BackgroundColor,
-                    effects.BackgroundThreshold
+                    effects.BackgroundThreshold,
+                    effects.DesaturateEnabled ? (Color?)effects.DesaturateColor : null,
+                    effects.DesaturateTolerance,
+                    effects.SnapNearGray,
+                    effects.SnapTolerance
                 );
 
                 // Update object image

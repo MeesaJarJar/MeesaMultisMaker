@@ -100,13 +100,20 @@ namespace MeesaMultisMaker
  return parent.Focused ? parent : null;
  }
 
- private void Form1_KeyDown(object sender, KeyEventArgs e)
- {
- // If user is typing in a text input (like the AI Settings panel), don't intercept single-key shortcuts
- bool isTyping = IsTextInputFocused();
- 
- // Escape exits slice mode
- if (!isTyping && e.KeyCode == Keys.Escape && isSliceMode)
+  private void Form1_KeyDown(object sender, KeyEventArgs e)
+  {
+  // Esc cancels an armed desaturate eyedropper first (works even while typing).
+  if (e.KeyCode == Keys.Escape && _desatEyedropperArmed)
+  {
+  CancelCanvasEyedropper();
+  e.Handled = true; return;
+  }
+
+  // If user is typing in a text input (like the AI Settings panel), don't intercept single-key shortcuts
+  bool isTyping = IsTextInputFocused();
+
+  // Escape exits slice mode
+  if (!isTyping && e.KeyCode == Keys.Escape && isSliceMode)
  {
      ExitSliceMode();
      e.Handled = true;

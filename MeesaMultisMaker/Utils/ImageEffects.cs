@@ -313,7 +313,8 @@ namespace MeesaMultisMaker.Utils
         public static Bitmap ApplyEffects(Bitmap source, float brightness, float contrast,
             float hue, float saturation, int pixelSize, bool pixelize, int paletteColors,
             int noiseIntensity = 0, int ditherLevels = 0, int edgeDarkening = 0, int colorBands = 0, bool fillHoles = false,
-            bool removeBackground = false, string backgroundMode = "Auto (corners)", Color? customBackgroundColor = null, int backgroundThreshold = 30)
+            bool removeBackground = false, string backgroundMode = "Auto (corners)", Color? customBackgroundColor = null, int backgroundThreshold = 30,
+            Color? desaturateTarget = null, int desaturateTolerance = 30, bool snapNearGray = false, int snapTolerance = 8)
         {
             Bitmap result = new Bitmap(source);
             Bitmap temp;
@@ -362,6 +363,24 @@ namespace MeesaMultisMaker.Utils
                 if (saturation != 0)
                 {
                     temp = AdjustSaturation(result, saturation);
+                    result.Dispose();
+                    result = temp;
+                }
+
+                // Desaturate a picked color range to exact luminance gray so UO
+                // partial hues catch those pixels (r==g&&g==b). Runs before
+                // pixelize/palette so later quantization preserves gray equality.
+                if (desaturateTarget.HasValue)
+                {
+                    temp = DesaturateColorRange(result, desaturateTarget.Value, desaturateTolerance);
+                    result.Dispose();
+                    result = temp;
+                }
+
+                // Snap near-gray antialiased fringes to exact gray.
+                if (snapNearGray)
+                {
+                    temp = SnapNearGray(result, snapTolerance);
                     result.Dispose();
                     result = temp;
                 }
@@ -762,6 +781,249 @@ namespace MeesaMultisMaker.Utils
 
             source.UnlockBits(sourceData);
             result.UnlockBits(resultData);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Exact luminance used for partial-hue prep (R=G=B=lum so
+        /// HuesReader.ApplyHue's r==g&&g==b check catches the pixel).
+        /// </summary>
+        public static byte ComputeLuminanceGray(byte r, byte g, byte b)
+        {
+            int lum = (int)(0.299 * r + 0.587 * g + 0.114 * b + 0.5);
+            if (lum < 0) lum = 0;
+            if (lum > 255) lum = 255;
+            return (byte)lum;
+        }
+
+        /// <summary>
+        /// True when the pixel is exact gray (UO partial-hue dyeable).
+        /// Channel equality matters: HuesReader.ApplyHue checks r==g&&g==b.
+        /// </summary>
+        public static bool IsExactGray(byte r, byte g, byte b)
+        {
+            return r == g && g == b;
+        }
+
+        /// <summary>
+        /// DESATURATE COLOR RANGE (partial-hue prep): replaces pixels matching
+        /// the picked target color (Manhattan RGB distance &lt;= tolerance)
+        /// with exact luminance gray (R=G=B=lum, 0.299R+0.587G+0.114B).
+        /// Preserves alpha; transparent pixels are left untouched.
+        /// </summary>
+        /// <param name="source">Source image (not mutated)</param>
+        /// <param name="target">Picked color to replace</param>
+        /// <param name="tolerance">Manhattan RGB distance 0-765 (UI typically 0-255)</param>
+        public static Bitmap DesaturateColorRange(Bitmap source, Color target, int tolerance)
+        {
+            if (source == null) return null;
+            if (tolerance < 0) tolerance = 0;
+
+            var result = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
+
+            BitmapData sourceData = source.LockBits(new Rectangle(0, 0, source.Width, source.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            BitmapData resultData = result.LockBits(new Rectangle(0, 0, result.Width, result.Height),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+            try
+            {
+                int bytes = Math.Abs(sourceData.Stride) * source.Height;
+                byte[] sourceBuffer = new byte[bytes];
+                byte[] resultBuffer = new byte[bytes];
+
+                Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
+
+                byte tr = target.R;
+                byte tg = target.G;
+                byte tb = target.B;
+
+                for (int i = 0; i < bytes; i += 4)
+                {
+                    byte b = sourceBuffer[i];
+                    byte g = sourceBuffer[i + 1];
+                    byte r = sourceBuffer[i + 2];
+                    byte a = sourceBuffer[i + 3];
+
+                    if (a == 0)
+                    {
+                        resultBuffer[i] = 0;
+                        resultBuffer[i + 1] = 0;
+                        resultBuffer[i + 2] = 0;
+                        resultBuffer[i + 3] = 0;
+                        continue;
+                    }
+
+                    int dist = Math.Abs(r - tr) + Math.Abs(g - tg) + Math.Abs(b - tb);
+                    if (dist <= tolerance)
+                    {
+                        byte lum = ComputeLuminanceGray(r, g, b);
+                        resultBuffer[i] = lum;
+                        resultBuffer[i + 1] = lum;
+                        resultBuffer[i + 2] = lum;
+                        resultBuffer[i + 3] = a;
+                    }
+                    else
+                    {
+                        resultBuffer[i] = b;
+                        resultBuffer[i + 1] = g;
+                        resultBuffer[i + 2] = r;
+                        resultBuffer[i + 3] = a;
+                    }
+                }
+
+                Marshal.Copy(resultBuffer, 0, resultData.Scan0, bytes);
+            }
+            finally
+            {
+                source.UnlockBits(sourceData);
+                result.UnlockBits(resultData);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// NEAR-GRAY SNAP: snaps near-gray pixels (max-min channel spread
+        /// &lt;= tolerance, default ~8) to exact luminance gray. Fixes
+        /// antialiased fringes escaping partial hue. Preserves alpha.
+        /// </summary>
+        /// <param name="source">Source image (not mutated)</param>
+        /// <param name="tolerance">Max channel spread 0-255 (default 8)</param>
+        public static Bitmap SnapNearGray(Bitmap source, int tolerance = 8)
+        {
+            if (source == null) return null;
+            if (tolerance < 0) tolerance = 0;
+            if (tolerance > 255) tolerance = 255;
+
+            var result = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
+
+            BitmapData sourceData = source.LockBits(new Rectangle(0, 0, source.Width, source.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            BitmapData resultData = result.LockBits(new Rectangle(0, 0, result.Width, result.Height),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+            try
+            {
+                int bytes = Math.Abs(sourceData.Stride) * source.Height;
+                byte[] sourceBuffer = new byte[bytes];
+                byte[] resultBuffer = new byte[bytes];
+
+                Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
+
+                for (int i = 0; i < bytes; i += 4)
+                {
+                    byte b = sourceBuffer[i];
+                    byte g = sourceBuffer[i + 1];
+                    byte r = sourceBuffer[i + 2];
+                    byte a = sourceBuffer[i + 3];
+
+                    if (a == 0)
+                    {
+                        resultBuffer[i] = 0;
+                        resultBuffer[i + 1] = 0;
+                        resultBuffer[i + 2] = 0;
+                        resultBuffer[i + 3] = 0;
+                        continue;
+                    }
+
+                    int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+                    int mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+                    if ((mx - mn) <= tolerance)
+                    {
+                        byte lum = ComputeLuminanceGray(r, g, b);
+                        resultBuffer[i] = lum;
+                        resultBuffer[i + 1] = lum;
+                        resultBuffer[i + 2] = lum;
+                        resultBuffer[i + 3] = a;
+                    }
+                    else
+                    {
+                        resultBuffer[i] = b;
+                        resultBuffer[i + 1] = g;
+                        resultBuffer[i + 2] = r;
+                        resultBuffer[i + 3] = a;
+                    }
+                }
+
+                Marshal.Copy(resultBuffer, 0, resultData.Scan0, bytes);
+            }
+            finally
+            {
+                source.UnlockBits(sourceData);
+                result.UnlockBits(resultData);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// PARTIAL-HUE MASK OVERLAY (paint-time preview only): returns a copy
+        /// where exact-gray pixels ( WILL dye under partial mode) are kept
+        /// as-is and non-gray pixels (will NOT dye) are tinted solid magenta
+        /// (255,0,255) preserving alpha. Never mutates the source. Caller
+        /// owns the returned bitmap and must dispose it after painting.
+        /// </summary>
+        /// <param name="source">Source image (not mutated)</param>
+        public static Bitmap BuildPartialHueMaskOverlay(Bitmap source)
+        {
+            if (source == null) return null;
+
+            var result = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
+
+            BitmapData sourceData = source.LockBits(new Rectangle(0, 0, source.Width, source.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            BitmapData resultData = result.LockBits(new Rectangle(0, 0, result.Width, result.Height),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+            try
+            {
+                int bytes = Math.Abs(sourceData.Stride) * source.Height;
+                byte[] sourceBuffer = new byte[bytes];
+                byte[] resultBuffer = new byte[bytes];
+
+                Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
+
+                for (int i = 0; i < bytes; i += 4)
+                {
+                    byte b = sourceBuffer[i];
+                    byte g = sourceBuffer[i + 1];
+                    byte r = sourceBuffer[i + 2];
+                    byte a = sourceBuffer[i + 3];
+
+                    if (a == 0)
+                    {
+                        resultBuffer[i] = 0;
+                        resultBuffer[i + 1] = 0;
+                        resultBuffer[i + 2] = 0;
+                        resultBuffer[i + 3] = 0;
+                        continue;
+                    }
+
+                    if (r == g && g == b)
+                    {
+                        resultBuffer[i] = b;
+                        resultBuffer[i + 1] = g;
+                        resultBuffer[i + 2] = r;
+                        resultBuffer[i + 3] = a;
+                    }
+                    else
+                    {
+                        resultBuffer[i] = 255;
+                        resultBuffer[i + 1] = 0;
+                        resultBuffer[i + 2] = 255;
+                        resultBuffer[i + 3] = a;
+                    }
+                }
+
+                Marshal.Copy(resultBuffer, 0, resultData.Scan0, bytes);
+            }
+            finally
+            {
+                source.UnlockBits(sourceData);
+                result.UnlockBits(resultData);
+            }
 
             return result;
         }

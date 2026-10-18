@@ -46,6 +46,17 @@ namespace MeesaMultisMaker.Controls
         private TrackBar colorBandsTrackBar;
         private Label colorBandsValueLabel;
 
+        // Partial-hue prep controls (desaturate color range + near-gray snap)
+        private CheckBox desaturateCheckBox;
+        private Panel desatColorPanel;
+        private Button desatPickButton;
+        private Label desatColorValueLabel;
+        private TrackBar desatToleranceTrackBar;
+        private Label desatToleranceValueLabel;
+        private CheckBox snapNearGrayCheckBox;
+        private TrackBar snapToleranceTrackBar;
+        private Label snapToleranceValueLabel;
+
         private CheckBox fillHolesCheckBox;
 
         private CheckBox realTimePreviewCheckBox;
@@ -61,21 +72,39 @@ namespace MeesaMultisMaker.Controls
         public event EventHandler ApplyToAllSelectedClicked;
         public event EventHandler EffectsChanged;
 
-        public float Brightness => (brightnessTrackBar.Value - 50) / 50f;
-        public float Contrast => (contrastTrackBar.Value - 50) / 50f;
-        public float Hue => hueTrackBar.Value;
-        public float Saturation => (saturationTrackBar.Value - 50) / 50f;
-        public int PixelSize => (int)pixelSizeUpDown.Value;
-        public bool PixelizeEnabled => pixelizeCheckBox.Checked;
-        public int PaletteColors => paletteReductionCheckBox.Checked ? int.Parse(paletteReductionComboBox.SelectedItem.ToString()) : 0;
+        /// <summary>
+        /// Fired when the user arms the desaturate eyedropper (swatch/Pick click)
+        /// and a canvas host is available. Hosts sample the next canvas click.
+        /// If no host subscribes, the panel falls back to a ColorDialog.
+        /// </summary>
+        public event EventHandler EyedropperRequested;
+        /// <summary>Fired when an armed eyedropper is cancelled (Esc / re-click).</summary>
+        public event EventHandler EyedropperCancelled;
+
+        public float Brightness => ((brightnessTrackBar?.Value ?? 50) - 50) / 50f;
+        public float Contrast => ((contrastTrackBar?.Value ?? 50) - 50) / 50f;
+        public float Hue => hueTrackBar?.Value ?? 0;
+        public float Saturation => ((saturationTrackBar?.Value ?? 50) - 50) / 50f;
+        public int PixelSize => (int)(pixelSizeUpDown?.Value ?? 1);
+        public bool PixelizeEnabled => pixelizeCheckBox?.Checked ?? false;
+        public int PaletteColors => (paletteReductionCheckBox?.Checked == true && paletteReductionComboBox?.SelectedItem != null) ? int.Parse(paletteReductionComboBox.SelectedItem.ToString()) : 0;
         public bool RealTimePreview => realTimePreviewCheckBox?.Checked ?? false;
         public bool FillHoles => fillHolesCheckBox?.Checked ?? false;
 
         // New UO-style effect properties
-        public int NoiseIntensity => noiseTrackBar.Value;
-        public int DitherLevels => ditherTrackBar.Value > 1 ? ditherTrackBar.Value : 0;
-        public int EdgeDarkening => edgeDarkenTrackBar.Value;
-        public int ColorBands => colorBandsTrackBar.Value > 1 ? colorBandsTrackBar.Value : 0;
+        public int NoiseIntensity => noiseTrackBar?.Value ?? 0;
+        public int DitherLevels => (ditherTrackBar?.Value ?? 0) > 1 ? ditherTrackBar.Value : 0;
+        public int EdgeDarkening => edgeDarkenTrackBar?.Value ?? 0;
+        public int ColorBands => (colorBandsTrackBar?.Value ?? 0) > 1 ? colorBandsTrackBar.Value : 0;
+
+        // Partial-hue prep properties (exact-gray authoring for UO partial hues)
+        public bool DesaturateEnabled => desaturateCheckBox?.Checked ?? false;
+        public Color DesaturateColor { get; private set; } = Color.Red;
+        /// <summary>True while the desaturate eyedropper is armed (waiting for a canvas pick).</summary>
+        public bool IsEyedropperArmed { get; private set; }
+        public int DesaturateTolerance => desatToleranceTrackBar?.Value ?? 30;
+        public bool SnapNearGrayEnabled => snapNearGrayCheckBox?.Checked ?? false;
+        public int SnapTolerance => snapToleranceTrackBar?.Value ?? 8;
 
         // Background removal properties
         public bool RemoveBackgroundEnabled => removeBackgroundCheckBox?.Checked ?? false;
@@ -99,20 +128,30 @@ namespace MeesaMultisMaker.Controls
             statusLabel.ForeColor = color ?? HolographicTheme.TextPrimary;
         }
 
+        public string StatusText => statusLabel?.Text ?? string.Empty;
+
         public void ResetToDefaults()
         {
-            brightnessTrackBar.Value = 50;
-            contrastTrackBar.Value = 50;
-            hueTrackBar.Value = 0;
-            saturationTrackBar.Value = 50;
-            pixelSizeUpDown.Value = 1;
-            pixelizeCheckBox.Checked = false;
-            paletteReductionCheckBox.Checked = false;
-            paletteReductionComboBox.SelectedIndex = 0;
-            noiseTrackBar.Value = 0;
-            ditherTrackBar.Value = 0;
-            edgeDarkenTrackBar.Value = 0;
-            colorBandsTrackBar.Value = 0;
+            if (brightnessTrackBar != null) brightnessTrackBar.Value = 50;
+            if (contrastTrackBar != null) contrastTrackBar.Value = 50;
+            if (hueTrackBar != null) hueTrackBar.Value = 0;
+            if (saturationTrackBar != null) saturationTrackBar.Value = 50;
+            if (pixelSizeUpDown != null) pixelSizeUpDown.Value = 1;
+            if (pixelizeCheckBox != null) pixelizeCheckBox.Checked = false;
+            if (paletteReductionCheckBox != null) paletteReductionCheckBox.Checked = false;
+            if (paletteReductionComboBox != null && paletteReductionComboBox.Items.Count > 0) paletteReductionComboBox.SelectedIndex = 0;
+            if (noiseTrackBar != null) noiseTrackBar.Value = 0;
+            if (ditherTrackBar != null) ditherTrackBar.Value = 0;
+            if (edgeDarkenTrackBar != null) edgeDarkenTrackBar.Value = 0;
+            if (colorBandsTrackBar != null) colorBandsTrackBar.Value = 0;
+            if (desaturateCheckBox != null) desaturateCheckBox.Checked = false;
+            if (desatToleranceTrackBar != null) desatToleranceTrackBar.Value = 30;
+            DesaturateColor = Color.Red;
+            IsEyedropperArmed = false;
+            UpdateDesatColorDisplay();
+            UpdateEyedropperUI();
+            if (snapNearGrayCheckBox != null) snapNearGrayCheckBox.Checked = false;
+            if (snapToleranceTrackBar != null) snapToleranceTrackBar.Value = 8;
             if (fillHolesCheckBox != null) fillHolesCheckBox.Checked = false;
             if (removeBackgroundCheckBox != null)
             {
@@ -480,6 +519,115 @@ namespace MeesaMultisMaker.Controls
             contentPanel.Controls.Add(edgeDarkenValueLabel);
             y += 50; // Extra padding after Edge Darken
 
+            // === PARTIAL HUE PREP SECTION (exact-gray authoring) ===
+            contentPanel.Controls.Add(CreateSeparator(10, y, 250));
+            y += 10;
+            var huePrepHeader = CreateSectionHeader("PARTIAL HUE PREP", 10, y);
+            contentPanel.Controls.Add(huePrepHeader);
+            y += 25;
+
+            desaturateCheckBox = new CheckBox
+            {
+                Text = "Desaturate Color Range",
+                Left = 10,
+                Top = y,
+                Width = 200,
+                Checked = false,
+                ForeColor = HolographicTheme.TextSecondary,
+                BackColor = Color.Transparent
+            };
+            desaturateCheckBox.CheckedChanged += (s, e) => OnEffectsChanged();
+            contentPanel.Controls.Add(desaturateCheckBox);
+            y += 30;
+
+            var desatColorLabel = CreateThemedLabel("Pick:", 10, y + 3, 45);
+            contentPanel.Controls.Add(desatColorLabel);
+
+            desatColorPanel = new Panel
+            {
+                Left = 60,
+                Top = y,
+                Width = 30,
+                Height = 25,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.Red,
+                Cursor = Cursors.Hand
+            };
+            desatColorPanel.Click += DesatEyedropperArmClick;
+            contentPanel.Controls.Add(desatColorPanel);
+
+            desatPickButton = new Button
+            {
+                Left = 95,
+                Top = y,
+                Width = 45,
+                Height = 25,
+                Text = "Pick",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            desatPickButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            desatPickButton.FlatAppearance.BorderSize = 1;
+            desatPickButton.Click += DesatEyedropperArmClick;
+            contentPanel.Controls.Add(desatPickButton);
+
+            desatColorValueLabel = CreateThemedLabel("RGB(255,0,0)", 145, y + 5, 115);
+            contentPanel.Controls.Add(desatColorValueLabel);
+            y += 35;
+
+            var desatTolLabel = CreateThemedLabel("Match Tolerance", 10, y, 120);
+            contentPanel.Controls.Add(desatTolLabel);
+            y += 20;
+
+            desatToleranceTrackBar = CreateThemedTrackBar(10, y, 195, 0, 255, 30);
+            desatToleranceTrackBar.ValueChanged += (s, e) =>
+            {
+                if (desatToleranceValueLabel != null)
+                    desatToleranceValueLabel.Text = $"{desatToleranceTrackBar.Value}";
+                OnEffectsChanged();
+            };
+            contentPanel.Controls.Add(desatToleranceTrackBar);
+
+            desatToleranceValueLabel = CreateValueLabel(210, y + 5, 50);
+            desatToleranceValueLabel.Text = "30";
+            contentPanel.Controls.Add(desatToleranceValueLabel);
+            y += 50;
+
+            snapNearGrayCheckBox = new CheckBox
+            {
+                Text = "Snap Near-Gray (fringe fix)",
+                Left = 10,
+                Top = y,
+                Width = 220,
+                Checked = false,
+                ForeColor = HolographicTheme.TextSecondary,
+                BackColor = Color.Transparent
+            };
+            snapNearGrayCheckBox.CheckedChanged += (s, e) => OnEffectsChanged();
+            contentPanel.Controls.Add(snapNearGrayCheckBox);
+            y += 30;
+
+            var snapTolLabel = CreateThemedLabel("Gray Spread", 10, y, 120);
+            contentPanel.Controls.Add(snapTolLabel);
+            y += 20;
+
+            snapToleranceTrackBar = CreateThemedTrackBar(10, y, 195, 0, 32, 8);
+            snapToleranceTrackBar.ValueChanged += (s, e) =>
+            {
+                if (snapToleranceValueLabel != null)
+                    snapToleranceValueLabel.Text = $"{snapToleranceTrackBar.Value}";
+                OnEffectsChanged();
+            };
+            contentPanel.Controls.Add(snapToleranceTrackBar);
+
+            snapToleranceValueLabel = CreateValueLabel(210, y + 5, 50);
+            snapToleranceValueLabel.Text = "8";
+            contentPanel.Controls.Add(snapToleranceValueLabel);
+            y += 50;
+
             // === PALETTE SECTION ===
             contentPanel.Controls.Add(CreateSeparator(10, y, 250));
             y += 10;
@@ -758,6 +906,84 @@ namespace MeesaMultisMaker.Controls
                     colorPickerLabel.Text = $"RGB({BackgroundColor.R},{BackgroundColor.G},{BackgroundColor.B})";
                     colorPickerLabel.Visible = backgroundModeComboBox?.SelectedItem?.ToString() == "Custom Color";
                 }
+            }
+        }
+
+        private void DesatEyedropperArmClick(object sender, EventArgs e)
+        {
+            // Re-click while armed disarms (Esc path calls CancelEyedropper directly).
+            if (IsEyedropperArmed)
+            {
+                CancelEyedropper();
+                return;
+            }
+
+            // No canvas host subscribed (e.g. Gump editor): keep the old ColorDialog
+            // so the tool still works everywhere.
+            if (EyedropperRequested == null)
+            {
+                using (var colorDialog = new ColorDialog())
+                {
+                    colorDialog.Color = DesaturateColor;
+                    colorDialog.FullOpen = true;
+
+                    if (colorDialog.ShowDialog() == DialogResult.OK)
+                    {
+                        DesaturateColor = colorDialog.Color;
+                        UpdateDesatColorDisplay();
+                        OnEffectsChanged();
+                    }
+                }
+                return;
+            }
+
+            IsEyedropperArmed = true;
+            UpdateEyedropperUI();
+            EyedropperRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// Host calls this with the canvas-sampled color. Sets the target,
+        /// disarms, refreshes the swatch and fires a preview.
+        /// </summary>
+        public void ConfirmEyedropper(Color picked)
+        {
+            SetDesaturateColor(picked);
+        }
+
+        /// <summary>Alias for ConfirmEyedropper (host delivery entry point).</summary>
+        public void SetDesaturateColor(Color picked)
+        {
+            DesaturateColor = picked;
+            IsEyedropperArmed = false;
+            UpdateDesatColorDisplay();
+            UpdateEyedropperUI();
+            OnEffectsChanged();
+        }
+
+        /// <summary>Disarm without changing the color (Esc / re-click).</summary>
+        public void CancelEyedropper()
+        {
+            if (!IsEyedropperArmed)
+                return;
+            IsEyedropperArmed = false;
+            UpdateEyedropperUI();
+            EyedropperCancelled?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void UpdateEyedropperUI()
+        {
+            if (desatPickButton != null)
+                desatPickButton.Text = IsEyedropperArmed ? "Stop" : "Pick";
+        }
+
+        private void UpdateDesatColorDisplay()
+        {
+            if (desatColorPanel != null)
+            {
+                desatColorPanel.BackColor = DesaturateColor;
+                if (desatColorValueLabel != null)
+                    desatColorValueLabel.Text = $"RGB({DesaturateColor.R},{DesaturateColor.G},{DesaturateColor.B})";
             }
         }
     }
