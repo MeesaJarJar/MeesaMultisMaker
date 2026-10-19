@@ -120,6 +120,7 @@ namespace MeesaMultisMaker
             {
                 placedObjects.Remove(obj);
                 lockedObjects.Remove(obj);
+                try { RemoveCanvasSamBucketFor(obj); } catch { }
             }
             selectedObjects.Clear();
             selectedObject = null;
@@ -153,6 +154,7 @@ namespace MeesaMultisMaker
                 lockedObjects.Remove(obj);
                 if (obj == selectedObject) selectedObject = null;
                 selectedObjects.Remove(obj);
+                try { RemoveCanvasSamBucketFor(obj); } catch { }
             }
 
             var reOrdered = placedObjects.OrderBy(o => o.Layer).ToList();

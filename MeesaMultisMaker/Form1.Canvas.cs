@@ -149,7 +149,7 @@ namespace MeesaMultisMaker
                     {
                         try
                         {
-                            Image hued = GetHuedStaticImage(hueArtId, huePreviewRawHue, huePreviewForceFull);
+                            Image hued = GetHuedStaticImage(obj.Image, hueArtId, huePreviewRawHue, huePreviewForceFull);
                             if (huesReader != null && huesReader.IsLoaded && hued != null && IsImageUsable(hued))
                                 paintImage = hued;
                             else if ((huesReader == null || !huesReader.IsLoaded) && !_hueMissingWarned)
@@ -199,6 +199,82 @@ namespace MeesaMultisMaker
                 {
                     try { maskOverlay?.Dispose(); } catch { }
                 }
+
+                // SAM Select gate overlay: cyan tint where each object's live mask
+                // is white. Paint-time only; never mutates art. Shows every object
+                // with a live mask when Show SAM is on and WxH matches.
+                try
+                {
+                    bool showSam = true;
+                    try { showSam = _imageEditingForm?.EditingPanel?.ShowSam ?? true; } catch { showSam = true; }
+                    Bitmap samMaskForObj = null;
+                    if (showSam)
+                    {
+                        try
+                        {
+                            CanvasSamBucket samBucket = null;
+                            if (_samBuckets.TryGetValue(obj, out samBucket) && samBucket != null && samBucket.Mask != null)
+                                samMaskForObj = samBucket.Mask;
+                        }
+                        catch { samMaskForObj = null; }
+                    }
+                    if (showSam && samMaskForObj != null)
+                    {
+                        int ow = 0, oh = 0, mw = 0, mh = 0;
+                        try { ow = obj.Image.Width; oh = obj.Image.Height; mw = samMaskForObj.Width; mh = samMaskForObj.Height; }
+                        catch { ow = 0; }
+                        if (ow > 0 && oh > 0 && mw == ow && mh == oh)
+                        {
+                            Bitmap samSrc = obj.Image as Bitmap;
+                            Bitmap tmpSamSrc = null;
+                            Bitmap samOverlay = null;
+                            try
+                            {
+                                try
+                                {
+                                    if (samSrc == null)
+                                    {
+                                        tmpSamSrc = new Bitmap(obj.Image);
+                                        samSrc = tmpSamSrc;
+                                    }
+                                    samOverlay = MeesaMultisMaker.Utils.ImageEffects.BuildSamOverlay(samSrc, samMaskForObj);
+                                }
+                                catch { samOverlay = null; }
+                                if (samOverlay != null)
+                                {
+                                    if (obj.HasSkew)
+                                        DrawSkewedImage(g, obj, drawX, drawY, w, h, samOverlay);
+                                    else if (obj.Rotation != 0f || obj.FlipHorizontal || obj.FlipVertical)
+                                    {
+                                        var savedSam = g.Save();
+                                        float centerX = drawX + w / 2f;
+                                        float centerY = drawY + h / 2f;
+                                        var m2 = new Matrix();
+                                        m2.Translate(centerX, centerY);
+                                        if (obj.Rotation != 0f) m2.Rotate(obj.Rotation);
+                                        if (obj.FlipHorizontal || obj.FlipVertical)
+                                            m2.Scale(obj.FlipHorizontal ? -1 : 1, obj.FlipVertical ? -1 : 1);
+                                        m2.Translate(-centerX, -centerY);
+                                        g.Transform = m2;
+                                        g.DrawImage(samOverlay, new RectangleF(drawX, drawY, w, h));
+                                        g.Restore(savedSam);
+                                        m2.Dispose();
+                                    }
+                                    else
+                                    {
+                                        g.DrawImage(samOverlay, new RectangleF(drawX, drawY, w, h));
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                try { samOverlay?.Dispose(); } catch { }
+                                try { tmpSamSrc?.Dispose(); } catch { }
+                            }
+                        }
+                    }
+                }
+                catch { }
 
                 bool isSel = selectedObjects.Contains(obj);
                 if (isSel)
@@ -1500,21 +1576,56 @@ namespace MeesaMultisMaker
             if (e.Button == MouseButtons.Middle)
             { isPanning = true; panDragStart = e.Location; panOffsetStart = canvasOffset; designPictureBox.Capture = true; return; }
 
+            // SAM Select (multi-object): L-click = FG, R-click or Shift+L-click = BG.
+            // Topmost-first hit-test across all visible objects (selected or not);
+            // the point appends to that object's bucket and reruns only it.
+            if (_samArmed && (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right) && _imageEditingForm != null)
+            {
+                PlacedObject samTarget;
+                int samX, samY;
+                if (TryPickSamPointFromCanvas(e.Location, out samTarget, out samX, out samY))
+                {
+                    bool isBg = e.Button == MouseButtons.Right || (ModifierKeys & Keys.Shift) == Keys.Shift;
+                    AddCanvasSamPointAndRerun(samTarget, samX, samY, isBg ? 0 : 1);
+                    int samCount = 0;
+                    string samGid = "?";
+                    try
+                    {
+                        CanvasSamBucket samBucket = null;
+                        if (_samBuckets.TryGetValue(samTarget, out samBucket) && samBucket != null && samBucket.Points != null)
+                            samCount = samBucket.Points.Count;
+                    }
+                    catch { }
+                    try { samGid = samTarget.GraphicId ?? "?"; } catch { }
+                    _imageEditingForm.SetStatus(
+                        (isBg ? "SAM +BG " : "SAM +FG ") + samGid + " (" + samX + "," + samY + ") [" + samCount + " pts] — segmenting… (Esc done)", Color.Green);
+                    designPictureBox.Invalidate();
+                }
+                else
+                {
+                    _imageEditingForm.SetStatus(
+                        "SAM: click on art (Esc done)", Color.Orange);
+                }
+                return;
+            }
+
             // Desaturate eyedropper: next left-click samples instead of selecting/dragging.
             if (_desatEyedropperArmed && e.Button == MouseButtons.Left && _imageEditingForm != null)
             {
                 Color picked;
                 if (TryPickDesatColorFromCanvas(e.Location, out picked))
                 {
-                    _imageEditingForm.ConfirmEyedropper(picked);
-                    DisarmCanvasEyedropper(
-                        $"Picked RGB({picked.R},{picked.G},{picked.B})", Color.Green);
+                    // Stays armed for rapid multi-picks; Esc / Stop / Pick disarms.
+                    _imageEditingForm.ConfirmEyedropper(picked, _desatEyedropperKind);
+                    string where = _desatEyedropperKind == MeesaMultisMaker.Controls.DesaturatePickKind.Protected ? "protected" : "targets";
+                    _imageEditingForm.SetStatus(
+                        $"Added RGB({picked.R},{picked.G},{picked.B}) to {where} — click to add more (Esc done)", Color.Green);
                     designPictureBox.Invalidate();
                 }
                 else
                 {
                     _imageEditingForm.SetStatus(
-                        "Transparent pixel — click another pixel (Esc cancels)", Color.Orange);
+                        "Transparent pixel — click another pixel (Esc done)", Color.Orange);
                 }
                 return;
             }

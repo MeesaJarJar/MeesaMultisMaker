@@ -1,9 +1,24 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using MeesaMultisMaker.Utils;
 
 namespace MeesaMultisMaker.Controls
 {
+    /// <summary>Which desaturate list an armed eyedropper pick goes into.</summary>
+    public enum DesaturatePickKind
+    {
+        Targets,
+        Protected
+    }
+
+    /// <summary>Carries the pick-kind for an armed eyedropper request.</summary>
+    public class EyedropperRequestedEventArgs : EventArgs
+    {
+        public DesaturatePickKind Kind { get; set; } = DesaturatePickKind.Targets;
+    }
+
     public class ImageEditingPanel : UserControl
     {
         private Panel headerPanel;
@@ -46,16 +61,36 @@ namespace MeesaMultisMaker.Controls
         private TrackBar colorBandsTrackBar;
         private Label colorBandsValueLabel;
 
-        // Partial-hue prep controls (desaturate color range + near-gray snap)
+        // Partial-hue prep controls (desaturate color ranges + near-gray snap)
         private CheckBox desaturateCheckBox;
-        private Panel desatColorPanel;
+        private ListBox desatTargetsListBox;
+        private Label desatTargetsCountLabel;
         private Button desatPickButton;
-        private Label desatColorValueLabel;
+        private Button desatRemoveButton;
+        private Button desatClearButton;
         private TrackBar desatToleranceTrackBar;
         private Label desatToleranceValueLabel;
+        private Label desatMatchCountLabel;
+        private readonly List<Color> _desatTargets = new List<Color>();
+        // Protect list (negative targets): never desaturated, even within tolerance of a target.
+        private ListBox desatProtectListBox;
+        private Label desatProtectCountLabel;
+        private Button desatProtectPickButton;
+        private Button desatProtectRemoveButton;
+        private Button desatProtectClearButton;
+        private readonly List<Color> _desatProtected = new List<Color>();
+        // Despeckle (min blob size): drops matched blobs smaller than N px.
+        private TrackBar despeckleTrackBar;
+        private Label despeckleValueLabel;
         private CheckBox snapNearGrayCheckBox;
         private TrackBar snapToleranceTrackBar;
         private Label snapToleranceValueLabel;
+
+        // SAM Select gate (spatial mask for partial-hue prep).
+        private Button samSelectButton;
+        private Button samClearButton;
+        private CheckBox showSamCheckBox;
+        private Label samInfoLabel;
 
         private CheckBox fillHolesCheckBox;
 
@@ -76,10 +111,19 @@ namespace MeesaMultisMaker.Controls
         /// Fired when the user arms the desaturate eyedropper (swatch/Pick click)
         /// and a canvas host is available. Hosts sample the next canvas click.
         /// If no host subscribes, the panel falls back to a ColorDialog.
+        /// Carries which list (Targets vs Protected) the pick goes into.
         /// </summary>
-        public event EventHandler EyedropperRequested;
+        public event EventHandler<EyedropperRequestedEventArgs> EyedropperRequested;
         /// <summary>Fired when an armed eyedropper is cancelled (Esc / re-click).</summary>
         public event EventHandler EyedropperCancelled;
+        /// <summary>Fired when SAM point-picking is armed. Hosts begin SAM clicks.</summary>
+        public event EventHandler SamSelectRequested;
+        /// <summary>Fired when SAM arming is cancelled (Esc / re-click / eyedropper). Keeps last mask.</summary>
+        public event EventHandler SamSelectCancelled;
+        /// <summary>Fired when Clear SAM is pressed. Hosts drop mask + points.</summary>
+        public event EventHandler SamClearRequested;
+        /// <summary>Fired when Show SAM toggle changes. Hosts invalidate paint.</summary>
+        public event EventHandler SamShowChanged;
 
         public float Brightness => ((brightnessTrackBar?.Value ?? 50) - 50) / 50f;
         public float Contrast => ((contrastTrackBar?.Value ?? 50) - 50) / 50f;
@@ -98,11 +142,26 @@ namespace MeesaMultisMaker.Controls
         public int ColorBands => (colorBandsTrackBar?.Value ?? 0) > 1 ? colorBandsTrackBar.Value : 0;
 
         // Partial-hue prep properties (exact-gray authoring for UO partial hues)
-        public bool DesaturateEnabled => desaturateCheckBox?.Checked ?? false;
-        public Color DesaturateColor { get; private set; } = Color.Red;
+        // The effect applies only when the checkbox is on AND at least one
+        // target color has been picked.
+        public bool DesaturateEnabled => (desaturateCheckBox?.Checked ?? false) && _desatTargets.Count > 0;
+        /// <summary>All picked target colors (read-only view).</summary>
+        public IReadOnlyList<Color> DesaturateTargets => _desatTargets.AsReadOnly();
+        /// <summary>All picked protected colors (never desaturated; read-only view).</summary>
+        public IReadOnlyList<Color> DesaturateProtected => _desatProtected.AsReadOnly();
+        /// <summary>First-target convenience (Color.Red when the list is empty).</summary>
+        public Color DesaturateColor => _desatTargets.Count > 0 ? _desatTargets[0] : Color.Red;
         /// <summary>True while the desaturate eyedropper is armed (waiting for a canvas pick).</summary>
         public bool IsEyedropperArmed { get; private set; }
+        /// <summary>Which list the armed eyedropper feeds (Targets vs Protected). Only one armed at a time.</summary>
+        public DesaturatePickKind ArmedPickKind { get; private set; } = DesaturatePickKind.Targets;
+        /// <summary>True while SAM point-picking is armed. Separate from the eyedropper; only one armed at a time.</summary>
+        public bool IsSamArmed { get; private set; }
+        /// <summary>Show SAM mask overlay (paint-time only). Default true.</summary>
+        public bool ShowSam => showSamCheckBox?.Checked ?? true;
         public int DesaturateTolerance => desatToleranceTrackBar?.Value ?? 30;
+        /// <summary>Despeckle min blob size 0-16 (0 = off).</summary>
+        public int DespeckleMinSize => despeckleTrackBar?.Value ?? 0;
         public bool SnapNearGrayEnabled => snapNearGrayCheckBox?.Checked ?? false;
         public int SnapTolerance => snapToleranceTrackBar?.Value ?? 8;
 
@@ -146,10 +205,18 @@ namespace MeesaMultisMaker.Controls
             if (colorBandsTrackBar != null) colorBandsTrackBar.Value = 0;
             if (desaturateCheckBox != null) desaturateCheckBox.Checked = false;
             if (desatToleranceTrackBar != null) desatToleranceTrackBar.Value = 30;
-            DesaturateColor = Color.Red;
+            if (despeckleTrackBar != null) despeckleTrackBar.Value = 0;
+            _desatTargets.Clear();
+            _desatProtected.Clear();
             IsEyedropperArmed = false;
-            UpdateDesatColorDisplay();
+            ArmedPickKind = DesaturatePickKind.Targets;
+            IsSamArmed = false;
+            UpdateDesatTargetsDisplay();
+            UpdateDesatProtectDisplay();
             UpdateEyedropperUI();
+            UpdateSamUI();
+            SetMatchCount(0);
+            SetSamInfo(0, false, false);
             if (snapNearGrayCheckBox != null) snapNearGrayCheckBox.Checked = false;
             if (snapToleranceTrackBar != null) snapToleranceTrackBar.Value = 8;
             if (fillHolesCheckBox != null) fillHolesCheckBox.Checked = false;
@@ -540,27 +607,43 @@ namespace MeesaMultisMaker.Controls
             contentPanel.Controls.Add(desaturateCheckBox);
             y += 30;
 
-            var desatColorLabel = CreateThemedLabel("Pick:", 10, y + 3, 45);
-            contentPanel.Controls.Add(desatColorLabel);
+            var desatTargetsLabel = CreateThemedLabel("Targets:", 10, y, 120);
+            contentPanel.Controls.Add(desatTargetsLabel);
 
-            desatColorPanel = new Panel
+            desatTargetsCountLabel = CreateValueLabel(140, y, 120);
+            desatTargetsCountLabel.Text = "0 picked";
+            contentPanel.Controls.Add(desatTargetsCountLabel);
+            y += 22;
+
+            desatTargetsListBox = new ListBox
             {
-                Left = 60,
+                Left = 10,
                 Top = y,
-                Width = 30,
-                Height = 25,
+                Width = 250,
+                Height = 66,
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 20,
+                IntegralHeight = false,
+                SelectionMode = System.Windows.Forms.SelectionMode.One,
+                BackColor = HolographicTheme.InputBackground,
+                ForeColor = HolographicTheme.TextPrimary,
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.Red,
-                Cursor = Cursors.Hand
+                Font = new Font("Consolas", 8.5f)
             };
-            desatColorPanel.Click += DesatEyedropperArmClick;
-            contentPanel.Controls.Add(desatColorPanel);
+            desatTargetsListBox.DrawItem += DesatTargetsListBox_DrawItem;
+            desatTargetsListBox.SelectedIndexChanged += (s, e) =>
+            {
+                if (desatRemoveButton != null)
+                    desatRemoveButton.Enabled = desatTargetsListBox.SelectedIndex >= 0;
+            };
+            contentPanel.Controls.Add(desatTargetsListBox);
+            y += 72;
 
             desatPickButton = new Button
             {
-                Left = 95,
+                Left = 10,
                 Top = y,
-                Width = 45,
+                Width = 70,
                 Height = 25,
                 Text = "Pick",
                 FlatStyle = FlatStyle.Flat,
@@ -574,12 +657,141 @@ namespace MeesaMultisMaker.Controls
             desatPickButton.Click += DesatEyedropperArmClick;
             contentPanel.Controls.Add(desatPickButton);
 
-            desatColorValueLabel = CreateThemedLabel("RGB(255,0,0)", 145, y + 5, 115);
-            contentPanel.Controls.Add(desatColorValueLabel);
-            y += 35;
+            desatRemoveButton = new Button
+            {
+                Left = 85,
+                Top = y,
+                Width = 82,
+                Height = 25,
+                Text = "Remove",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            desatRemoveButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            desatRemoveButton.FlatAppearance.BorderSize = 1;
+            desatRemoveButton.Click += (s, e) => RemoveSelectedDesaturateTarget();
+            contentPanel.Controls.Add(desatRemoveButton);
 
-            var desatTolLabel = CreateThemedLabel("Match Tolerance", 10, y, 120);
+            desatClearButton = new Button
+            {
+                Left = 172,
+                Top = y,
+                Width = 88,
+                Height = 25,
+                Text = "Clear",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            desatClearButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            desatClearButton.FlatAppearance.BorderSize = 1;
+            desatClearButton.Click += (s, e) => ClearDesaturateTargets();
+            contentPanel.Controls.Add(desatClearButton);
+            y += 31;
+
+            var desatProtectLabel = CreateThemedLabel("Protect (never touch):", 10, y, 150);
+            contentPanel.Controls.Add(desatProtectLabel);
+
+            desatProtectCountLabel = CreateValueLabel(165, y, 95);
+            desatProtectCountLabel.Text = "0 picked";
+            contentPanel.Controls.Add(desatProtectCountLabel);
+            y += 22;
+
+            desatProtectListBox = new ListBox
+            {
+                Left = 10,
+                Top = y,
+                Width = 250,
+                Height = 52,
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = 20,
+                IntegralHeight = false,
+                SelectionMode = System.Windows.Forms.SelectionMode.One,
+                BackColor = HolographicTheme.InputBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Consolas", 8.5f)
+            };
+            desatProtectListBox.DrawItem += DesatProtectListBox_DrawItem;
+            desatProtectListBox.SelectedIndexChanged += (s, e) =>
+            {
+                if (desatProtectRemoveButton != null)
+                    desatProtectRemoveButton.Enabled = desatProtectListBox.SelectedIndex >= 0;
+            };
+            contentPanel.Controls.Add(desatProtectListBox);
+            y += 58;
+
+            desatProtectPickButton = new Button
+            {
+                Left = 10,
+                Top = y,
+                Width = 70,
+                Height = 25,
+                Text = "Pick",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            desatProtectPickButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            desatProtectPickButton.FlatAppearance.BorderSize = 1;
+            desatProtectPickButton.Click += DesatProtectEyedropperArmClick;
+            contentPanel.Controls.Add(desatProtectPickButton);
+
+            desatProtectRemoveButton = new Button
+            {
+                Left = 85,
+                Top = y,
+                Width = 82,
+                Height = 25,
+                Text = "Remove",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            desatProtectRemoveButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            desatProtectRemoveButton.FlatAppearance.BorderSize = 1;
+            desatProtectRemoveButton.Click += (s, e) => RemoveSelectedDesaturateProtected();
+            contentPanel.Controls.Add(desatProtectRemoveButton);
+
+            desatProtectClearButton = new Button
+            {
+                Left = 172,
+                Top = y,
+                Width = 88,
+                Height = 25,
+                Text = "Clear",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            desatProtectClearButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            desatProtectClearButton.FlatAppearance.BorderSize = 1;
+            desatProtectClearButton.Click += (s, e) => ClearDesaturateProtected();
+            contentPanel.Controls.Add(desatProtectClearButton);
+            y += 31;
+
+            var desatTolLabel = CreateThemedLabel("Match Tolerance", 10, y, 100);
             contentPanel.Controls.Add(desatTolLabel);
+
+            desatMatchCountLabel = CreateValueLabel(110, y, 100);
+            desatMatchCountLabel.Text = "~0 px";
+            desatMatchCountLabel.Font = new Font("Consolas", 8f);
+            contentPanel.Controls.Add(desatMatchCountLabel);
             y += 20;
 
             desatToleranceTrackBar = CreateThemedTrackBar(10, y, 195, 0, 255, 30);
@@ -594,6 +806,24 @@ namespace MeesaMultisMaker.Controls
             desatToleranceValueLabel = CreateValueLabel(210, y + 5, 50);
             desatToleranceValueLabel.Text = "30";
             contentPanel.Controls.Add(desatToleranceValueLabel);
+            y += 50;
+
+            var despeckleLabel = CreateThemedLabel("Despeckle (min blob)", 10, y, 150);
+            contentPanel.Controls.Add(despeckleLabel);
+            y += 20;
+
+            despeckleTrackBar = CreateThemedTrackBar(10, y, 195, 0, 16, 0);
+            despeckleTrackBar.ValueChanged += (s, e) =>
+            {
+                if (despeckleValueLabel != null)
+                    despeckleValueLabel.Text = despeckleTrackBar.Value > 0 ? $"{despeckleTrackBar.Value}" : "Off";
+                OnEffectsChanged();
+            };
+            contentPanel.Controls.Add(despeckleTrackBar);
+
+            despeckleValueLabel = CreateValueLabel(210, y + 5, 50);
+            despeckleValueLabel.Text = "Off";
+            contentPanel.Controls.Add(despeckleValueLabel);
             y += 50;
 
             snapNearGrayCheckBox = new CheckBox
@@ -627,6 +857,73 @@ namespace MeesaMultisMaker.Controls
             snapToleranceValueLabel.Text = "8";
             contentPanel.Controls.Add(snapToleranceValueLabel);
             y += 50;
+
+            // --- SAM Select gate (spatial mask for partial-hue prep) ---
+            var samHeader = CreateThemedLabel("SAM Select gate:", 10, y, 150);
+            contentPanel.Controls.Add(samHeader);
+            y += 20;
+
+            samSelectButton = new Button
+            {
+                Left = 10,
+                Top = y,
+                Width = 88,
+                Height = 25,
+                Text = "SAM Select",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            samSelectButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            samSelectButton.FlatAppearance.BorderSize = 1;
+            samSelectButton.Click += (s, e) => ToggleSamArming();
+            contentPanel.Controls.Add(samSelectButton);
+
+            samClearButton = new Button
+            {
+                Left = 103,
+                Top = y,
+                Width = 88,
+                Height = 25,
+                Text = "Clear SAM",
+                FlatStyle = FlatStyle.Flat,
+                BackColor = HolographicTheme.ButtonBackground,
+                ForeColor = HolographicTheme.TextPrimary,
+                Font = new Font("Consolas", 8, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            samClearButton.FlatAppearance.BorderColor = HolographicTheme.BorderCyan;
+            samClearButton.FlatAppearance.BorderSize = 1;
+            samClearButton.Click += (s, e) => ClearSam();
+            contentPanel.Controls.Add(samClearButton);
+            y += 30;
+
+            showSamCheckBox = new CheckBox
+            {
+                Text = "Show SAM",
+                Left = 10,
+                Top = y,
+                Width = 100,
+                Checked = true,
+                ForeColor = HolographicTheme.TextSecondary,
+                BackColor = Color.Transparent
+            };
+            showSamCheckBox.CheckedChanged += (s, e) => SamShowChanged?.Invoke(this, EventArgs.Empty);
+            contentPanel.Controls.Add(showSamCheckBox);
+
+            samInfoLabel = CreateValueLabel(110, y + 2, 150);
+            samInfoLabel.Text = "No SAM mask";
+            samInfoLabel.Font = new Font("Consolas", 8f);
+            contentPanel.Controls.Add(samInfoLabel);
+            y += 30;
+
+            var samHint = CreateThemedLabel("L-click: +FG  R/Sft-click: +BG", 10, y, 250);
+            samHint.Font = new Font("Consolas", 7.5f);
+            contentPanel.Controls.Add(samHint);
+            y += 20;
 
             // === PALETTE SECTION ===
             contentPanel.Controls.Add(CreateSeparator(10, y, 250));
@@ -911,53 +1208,154 @@ namespace MeesaMultisMaker.Controls
 
         private void DesatEyedropperArmClick(object sender, EventArgs e)
         {
-            // Re-click while armed disarms (Esc path calls CancelEyedropper directly).
+            ArmEyedropper(DesaturatePickKind.Targets);
+        }
+
+        private void DesatProtectEyedropperArmClick(object sender, EventArgs e)
+        {
+            ArmEyedropper(DesaturatePickKind.Protected);
+        }
+
+        private void ArmEyedropper(DesaturatePickKind kind)
+        {
+            // SAM and eyedropper are mutually exclusive: arming one disarms the other.
+            if (IsSamArmed)
+                DisarmSamInternal();
+            // Re-click while armed disarms either kind (Esc path calls CancelEyedropper directly).
+            // Clicking the other Pick button while armed switches kinds (only one armed at a time).
             if (IsEyedropperArmed)
             {
-                CancelEyedropper();
+                if (ArmedPickKind == kind)
+                {
+                    CancelEyedropper();
+                    return;
+                }
+                ArmedPickKind = kind;
+                UpdateEyedropperUI();
+                EyedropperRequested?.Invoke(this, new EyedropperRequestedEventArgs { Kind = kind });
                 return;
             }
 
             // No canvas host subscribed (e.g. Gump editor): keep the old ColorDialog
-            // so the tool still works everywhere.
+            // so the tool still works everywhere. The chosen color is appended
+            // to the list being picked into (Targets behavior unchanged).
             if (EyedropperRequested == null)
             {
                 using (var colorDialog = new ColorDialog())
                 {
-                    colorDialog.Color = DesaturateColor;
+                    colorDialog.Color = kind == DesaturatePickKind.Protected && _desatProtected.Count > 0
+                        ? _desatProtected[_desatProtected.Count - 1] : DesaturateColor;
                     colorDialog.FullOpen = true;
 
                     if (colorDialog.ShowDialog() == DialogResult.OK)
                     {
-                        DesaturateColor = colorDialog.Color;
-                        UpdateDesatColorDisplay();
-                        OnEffectsChanged();
+                        if (kind == DesaturatePickKind.Protected)
+                            AddDesaturateProtected(colorDialog.Color);
+                        else
+                            AddDesaturateTarget(colorDialog.Color);
                     }
                 }
                 return;
             }
 
             IsEyedropperArmed = true;
+            ArmedPickKind = kind;
             UpdateEyedropperUI();
-            EyedropperRequested?.Invoke(this, EventArgs.Empty);
+            EyedropperRequested?.Invoke(this, new EyedropperRequestedEventArgs { Kind = kind });
         }
 
         /// <summary>
-        /// Host calls this with the canvas-sampled color. Sets the target,
-        /// disarms, refreshes the swatch and fires a preview.
+        /// Appends a target color (exact duplicates are ignored). Fires a
+        /// preview. The eyedropper stays armed for rapid multi-picks; Esc or
+        /// the Pick/Stop button disarms. Returns false for duplicates.
+        /// </summary>
+        public bool AddDesaturateTarget(Color picked)
+        {
+            Color opaque = Color.FromArgb(picked.R, picked.G, picked.B);
+            foreach (var existing in _desatTargets)
+            {
+                if (existing.ToArgb() == opaque.ToArgb())
+                    return false;
+            }
+            _desatTargets.Add(opaque);
+            UpdateDesatTargetsDisplay();
+            if (desatTargetsListBox != null && desatTargetsListBox.Items.Count > 0)
+                desatTargetsListBox.SelectedIndex = desatTargetsListBox.Items.Count - 1;
+            OnEffectsChanged();
+            return true;
+        }
+
+        /// <summary>
+        /// Host calls this with each canvas-sampled color. Appends to the armed
+        /// list (or Targets when kind is omitted for back-compat) and STAYS
+        /// ARMED so the user can rapidly pick several shades.
         /// </summary>
         public void ConfirmEyedropper(Color picked)
         {
-            SetDesaturateColor(picked);
+            ConfirmEyedropper(picked, ArmedPickKind);
         }
 
-        /// <summary>Alias for ConfirmEyedropper (host delivery entry point).</summary>
+        /// <summary>Kind-aware host delivery entry point. Appends to the right list.</summary>
+        public void ConfirmEyedropper(Color picked, DesaturatePickKind kind)
+        {
+            SetDesaturateColor(picked, kind);
+        }
+
+        /// <summary>Alias for ConfirmEyedropper (host delivery entry point). Append semantics.</summary>
         public void SetDesaturateColor(Color picked)
         {
-            DesaturateColor = picked;
-            IsEyedropperArmed = false;
-            UpdateDesatColorDisplay();
-            UpdateEyedropperUI();
+            SetDesaturateColor(picked, ArmedPickKind);
+        }
+
+        /// <summary>Kind-aware alias. Appends to the right list; stays armed.</summary>
+        public void SetDesaturateColor(Color picked, DesaturatePickKind kind)
+        {
+            if (kind == DesaturatePickKind.Protected)
+                AddDesaturateProtected(picked);
+            else
+                AddDesaturateTarget(picked);
+            // Stay armed: Esc / Stop / Pick-button disarms.
+        }
+
+        /// <summary>Removes the first list entry matching the color. Returns true when removed.</summary>
+        public bool RemoveDesaturateTarget(Color target)
+        {
+            Color opaque = Color.FromArgb(target.R, target.G, target.B);
+            for (int i = 0; i < _desatTargets.Count; i++)
+            {
+                if (_desatTargets[i].ToArgb() == opaque.ToArgb())
+                {
+                    RemoveDesaturateTargetAt(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Removes the target at the given list index (used by the Remove button).</summary>
+        public void RemoveDesaturateTargetAt(int index)
+        {
+            if (index < 0 || index >= _desatTargets.Count)
+                return;
+            _desatTargets.RemoveAt(index);
+            UpdateDesatTargetsDisplay();
+            OnEffectsChanged();
+        }
+
+        /// <summary>Removes the currently selected list entry, if any.</summary>
+        public void RemoveSelectedDesaturateTarget()
+        {
+            if (desatTargetsListBox != null)
+                RemoveDesaturateTargetAt(desatTargetsListBox.SelectedIndex);
+        }
+
+        /// <summary>Clears all target colors.</summary>
+        public void ClearDesaturateTargets()
+        {
+            if (_desatTargets.Count == 0)
+                return;
+            _desatTargets.Clear();
+            UpdateDesatTargetsDisplay();
             OnEffectsChanged();
         }
 
@@ -971,20 +1369,278 @@ namespace MeesaMultisMaker.Controls
             EyedropperCancelled?.Invoke(this, EventArgs.Empty);
         }
 
+        /// <summary>Toggle SAM point-picking. Only one of SAM/eyedropper armed at a time.</summary>
+        public void ToggleSamArming()
+        {
+            if (IsSamArmed)
+            {
+                CancelSamArming();
+                return;
+            }
+            ArmSam();
+        }
+
+        private void ArmSam()
+        {
+            // Missing-files guard: show the missing path, arm nothing.
+            string missing = SamService.GetMissingPath();
+            if (missing != null)
+            {
+                SetStatus("SAM files missing: " + missing, Color.Orange);
+                return;
+            }
+            // No host subscribed: arm nothing (no fallback for SAM points).
+            if (SamSelectRequested == null)
+            {
+                SetStatus("SAM host not available", Color.Orange);
+                return;
+            }
+            if (IsEyedropperArmed)
+            {
+                IsEyedropperArmed = false;
+                UpdateEyedropperUI();
+                EyedropperCancelled?.Invoke(this, EventArgs.Empty);
+            }
+            IsSamArmed = true;
+            UpdateSamUI();
+            SamSelectRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>Disarm SAM arming but KEEP the last mask (Esc path).</summary>
+        public void CancelSamArming()
+        {
+            if (!IsSamArmed)
+                return;
+            IsSamArmed = false;
+            UpdateSamUI();
+            SamSelectCancelled?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void DisarmSamInternal()
+        {
+            // Internal mutual-exclusion disarm (no event; the arming path raises its own).
+            IsSamArmed = false;
+            UpdateSamUI();
+        }
+
+        /// <summary>Clear SAM button: disarms arming and asks hosts to drop mask + points.</summary>
+        public void ClearSam()
+        {
+            bool wasArmed = IsSamArmed;
+            IsSamArmed = false;
+            UpdateSamUI();
+            if (wasArmed)
+                SamSelectCancelled?.Invoke(this, EventArgs.Empty);
+            SamClearRequested?.Invoke(this, EventArgs.Empty);
+            SetSamInfo(0, false, false);
+        }
+
+        private void UpdateSamUI()
+        {
+            try
+            {
+                if (samSelectButton != null)
+                    samSelectButton.Text = IsSamArmed ? "Stop SAM" : "SAM Select";
+            }
+            catch { }
+        }
+
+        /// <summary>Host updates the SAM readout. Thread-safe.</summary>
+        public void SetSamInfo(int pointCount, bool hasMask, bool busy)
+        {
+            try
+            {
+                if (samInfoLabel == null && samClearButton == null) return;
+                Action apply = () =>
+                {
+                    try
+                    {
+                        if (samInfoLabel != null)
+                        {
+                            if (busy) samInfoLabel.Text = "SAM segmenting…";
+                            else if (hasMask) samInfoLabel.Text = pointCount + " pts + mask";
+                            else if (pointCount > 0) samInfoLabel.Text = pointCount + " pts";
+                            else samInfoLabel.Text = "No SAM mask";
+                        }
+                        if (samClearButton != null)
+                            samClearButton.Enabled = pointCount > 0 || hasMask || busy;
+                    }
+                    catch { }
+                };
+                if (samInfoLabel != null && samInfoLabel.InvokeRequired)
+                    samInfoLabel.Invoke(apply);
+                else
+                    apply();
+            }
+            catch { }
+        }
+
         private void UpdateEyedropperUI()
         {
             if (desatPickButton != null)
-                desatPickButton.Text = IsEyedropperArmed ? "Stop" : "Pick";
+                desatPickButton.Text = (IsEyedropperArmed && ArmedPickKind == DesaturatePickKind.Targets) ? "Stop" : "Pick";
+            if (desatProtectPickButton != null)
+                desatProtectPickButton.Text = (IsEyedropperArmed && ArmedPickKind == DesaturatePickKind.Protected) ? "Stop" : "Pick";
         }
 
-        private void UpdateDesatColorDisplay()
+        /// <summary>
+        /// Appends a protected color (exact duplicates are ignored). Fires a
+        /// preview. The eyedropper stays armed for rapid multi-picks.
+        /// Returns false for duplicates.
+        /// </summary>
+        public bool AddDesaturateProtected(Color picked)
         {
-            if (desatColorPanel != null)
+            Color opaque = Color.FromArgb(picked.R, picked.G, picked.B);
+            foreach (var existing in _desatProtected)
             {
-                desatColorPanel.BackColor = DesaturateColor;
-                if (desatColorValueLabel != null)
-                    desatColorValueLabel.Text = $"RGB({DesaturateColor.R},{DesaturateColor.G},{DesaturateColor.B})";
+                if (existing.ToArgb() == opaque.ToArgb())
+                    return false;
             }
+            _desatProtected.Add(opaque);
+            UpdateDesatProtectDisplay();
+            if (desatProtectListBox != null && desatProtectListBox.Items.Count > 0)
+                desatProtectListBox.SelectedIndex = desatProtectListBox.Items.Count - 1;
+            OnEffectsChanged();
+            return true;
+        }
+
+        /// <summary>Removes the first protected entry matching the color. Returns true when removed.</summary>
+        public bool RemoveDesaturateProtected(Color target)
+        {
+            Color opaque = Color.FromArgb(target.R, target.G, target.B);
+            for (int i = 0; i < _desatProtected.Count; i++)
+            {
+                if (_desatProtected[i].ToArgb() == opaque.ToArgb())
+                {
+                    RemoveDesaturateProtectedAt(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>Removes the protected entry at the given list index.</summary>
+        public void RemoveDesaturateProtectedAt(int index)
+        {
+            if (index < 0 || index >= _desatProtected.Count)
+                return;
+            _desatProtected.RemoveAt(index);
+            UpdateDesatProtectDisplay();
+            OnEffectsChanged();
+        }
+
+        /// <summary>Removes the currently selected protected entry, if any.</summary>
+        public void RemoveSelectedDesaturateProtected()
+        {
+            if (desatProtectListBox != null)
+                RemoveDesaturateProtectedAt(desatProtectListBox.SelectedIndex);
+        }
+
+        /// <summary>Clears all protected colors.</summary>
+        public void ClearDesaturateProtected()
+        {
+            if (_desatProtected.Count == 0)
+                return;
+            _desatProtected.Clear();
+            UpdateDesatProtectDisplay();
+            OnEffectsChanged();
+        }
+
+        /// <summary>Updates the "~N px will change" readout next to Match Tolerance.</summary>
+        public void SetMatchCount(int count)
+        {
+            if (desatMatchCountLabel == null)
+                return;
+            if (desatMatchCountLabel.InvokeRequired)
+            {
+                desatMatchCountLabel.Invoke(new Action(() => SetMatchCount(count)));
+                return;
+            }
+            desatMatchCountLabel.Text = "~" + count + " px";
+        }
+
+        private void DesatTargetsListBox_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            DrawColorListBoxItem(desatTargetsListBox, e);
+        }
+
+        private void DesatProtectListBox_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            DrawColorListBoxItem(desatProtectListBox, e);
+        }
+
+        private void DrawColorListBoxItem(ListBox listBox, DrawItemEventArgs e)
+        {
+            e.DrawBackground();
+            if (e.Index < 0 || listBox == null || e.Index >= listBox.Items.Count)
+                return;
+            if (!(listBox.Items[e.Index] is Color))
+                return;
+            Color c = (Color)listBox.Items[e.Index];
+
+            Rectangle chip = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, 26, Math.Max(4, e.Bounds.Height - 6));
+            using (var brush = new SolidBrush(c))
+                e.Graphics.FillRectangle(brush, chip);
+            e.Graphics.DrawRectangle(Pens.Gray, chip);
+
+            string text = string.Format("RGB({0},{1},{2})", c.R, c.G, c.B);
+            using (var textBrush = new SolidBrush(HolographicTheme.TextPrimary))
+                e.Graphics.DrawString(text, e.Font, textBrush, e.Bounds.Left + 36, e.Bounds.Top + 3);
+            e.DrawFocusRectangle();
+        }
+
+        private void UpdateDesatTargetsDisplay()
+        {
+            if (desatTargetsListBox != null)
+            {
+                int keepSelection = desatTargetsListBox.SelectedIndex;
+                desatTargetsListBox.BeginUpdate();
+                try
+                {
+                    desatTargetsListBox.Items.Clear();
+                    foreach (var c in _desatTargets)
+                        desatTargetsListBox.Items.Add(c);
+                    if (keepSelection >= 0 && keepSelection < desatTargetsListBox.Items.Count)
+                        desatTargetsListBox.SelectedIndex = keepSelection;
+                }
+                finally
+                {
+                    desatTargetsListBox.EndUpdate();
+                }
+                if (desatRemoveButton != null)
+                    desatRemoveButton.Enabled = desatTargetsListBox.SelectedIndex >= 0;
+            }
+            if (desatTargetsCountLabel != null)
+                desatTargetsCountLabel.Text = _desatTargets.Count == 1 ? "1 picked" : _desatTargets.Count + " picked";
+            if (desatClearButton != null)
+                desatClearButton.Enabled = _desatTargets.Count > 0;
+        }
+
+        private void UpdateDesatProtectDisplay()
+        {
+            if (desatProtectListBox != null)
+            {
+                int keepSelection = desatProtectListBox.SelectedIndex;
+                desatProtectListBox.BeginUpdate();
+                try
+                {
+                    desatProtectListBox.Items.Clear();
+                    foreach (var c in _desatProtected)
+                        desatProtectListBox.Items.Add(c);
+                    if (keepSelection >= 0 && keepSelection < desatProtectListBox.Items.Count)
+                        desatProtectListBox.SelectedIndex = keepSelection;
+                }
+                finally
+                {
+                    desatProtectListBox.EndUpdate();
+                }
+                if (desatProtectRemoveButton != null)
+                    desatProtectRemoveButton.Enabled = desatProtectListBox.SelectedIndex >= 0;
+            }
+            if (desatProtectCountLabel != null)
+                desatProtectCountLabel.Text = _desatProtected.Count == 1 ? "1 picked" : _desatProtected.Count + " picked";
+            if (desatProtectClearButton != null)
+                desatProtectClearButton.Enabled = _desatProtected.Count > 0;
         }
     }
 }

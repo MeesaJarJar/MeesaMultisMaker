@@ -665,7 +665,7 @@ namespace MeesaMultisMaker
         {
             foreach (var kvp in huedArtCache)
             {
-                try { kvp.Value?.Dispose(); } catch { }
+                try { kvp.Value?.Hued?.Dispose(); } catch { }
             }
             huedArtCache.Clear();
         }
@@ -712,40 +712,53 @@ namespace MeesaMultisMaker
         }
 
         /// <summary>
-        /// Returns a hued copy of the static art, cached by (artId, hueId, partial).
-        /// Hue 0 returns the original image. Mirrors MapViewerForm.Rendering.cs:285-293.
+        /// Returns a hued copy of the caller's LIVE image, cached by (artId, hueId, partial)
+        /// plus a ReferenceEquals check on the live base. artId is used only for the
+        /// TileFlag.PartialHue fallback in SplitRawHue and as part of the cache key;
+        /// the hue is always applied to liveBase (never reloaded from the .mul file).
+        /// Hue 0 returns liveBase. Mirrors MapViewerForm.Rendering.cs:285-293.
         /// forceFull=true forces partial=false (Full preview mode); the resolved partial
         /// is part of the cache key, so forced-full vs auto-partial never collide.
+        /// A changed live image (new Bitmap instance on every edit apply) misses the
+        /// reference check, disposes the stale hued bitmap, and recomputes — one
+        /// entry per key, no unbounded growth.
         /// </summary>
-        internal Image GetHuedStaticImage(int artId, int rawHue, bool forceFull = false)
+        internal Image GetHuedStaticImage(Image liveBase, int artId, int rawHue, bool forceFull = false)
         {
-            Image baseImage = LoadStaticItemImage(artId);
-            if (baseImage == null)
+            if (liveBase == null)
                 return null;
             if (!SplitRawHue(rawHue, artId, out int hueId, out bool partialHue, forceFull))
-                return baseImage;
+                return liveBase;
             if (huesReader == null || !huesReader.IsLoaded)
             {
                 EnsureHuesLoaded();
                 if (huesReader == null || !huesReader.IsLoaded)
-                    return baseImage;
+                    return liveBase;
             }
             var key = (artId, hueId, partialHue);
-            if (!huedArtCache.TryGetValue(key, out var cachedHued))
+            if (huedArtCache.TryGetValue(key, out var entry)
+                && entry != null
+                && ReferenceEquals(entry.BaseImage, liveBase)
+                && entry.Hued != null)
             {
-                cachedHued = huesReader.ApplyHue(baseImage, hueId, partialHue);
-                if (cachedHued != null)
-                    huedArtCache[key] = cachedHued;
+                return entry.Hued;
             }
-            return cachedHued ?? baseImage;
+            if (entry?.Hued != null)
+            {
+                try { entry.Hued.Dispose(); } catch { }
+            }
+            Bitmap hued = huesReader.ApplyHue(liveBase, hueId, partialHue);
+            if (hued != null)
+                huedArtCache[key] = new HuedCacheEntry { BaseImage = liveBase, Hued = hued };
+            return (Image)hued ?? liveBase;
         }
 
         /// <summary>
-        /// Overload for ushort art IDs.
+        /// Overload for ushort art IDs. Hues liveBase (the object's live image).
         /// </summary>
-        internal Image GetHuedStaticImage(ushort artId, int rawHue, bool forceFull = false)
+        internal Image GetHuedStaticImage(Image liveBase, ushort artId, int rawHue, bool forceFull = false)
         {
-            return GetHuedStaticImage((int)artId, rawHue, forceFull);
+            return GetHuedStaticImage(liveBase, (int)artId, rawHue, forceFull);
         }
 
         /// <summary>

@@ -102,6 +102,12 @@ namespace MeesaMultisMaker
 
   private void Form1_KeyDown(object sender, KeyEventArgs e)
   {
+  // Esc disarms SAM arming first (keeps last mask; Clear drops it).
+  if (e.KeyCode == Keys.Escape && _samArmed)
+  {
+  CancelCanvasSamArming();
+  e.Handled = true; return;
+  }
   // Esc cancels an armed desaturate eyedropper first (works even while typing).
   if (e.KeyCode == Keys.Escape && _desatEyedropperArmed)
   {

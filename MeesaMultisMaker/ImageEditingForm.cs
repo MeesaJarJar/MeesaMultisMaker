@@ -1,5 +1,6 @@
 using MeesaMultisMaker.Controls;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -18,10 +19,18 @@ namespace MeesaMultisMaker
         public event EventHandler ResetRequested;
         public event EventHandler<ImageEffectEventArgs> RealTimePreview; // New event for real-time preview
 
-        /// <summary>Forwarded desaturate eyedropper arming from the inner panel.</summary>
-        public event EventHandler EyedropperRequested;
+        /// <summary>Forwarded desaturate eyedropper arming from the inner panel (carries Targets vs Protected).</summary>
+        public event EventHandler<EyedropperRequestedEventArgs> EyedropperRequested;
         /// <summary>Forwarded eyedropper cancel from the inner panel.</summary>
         public event EventHandler EyedropperCancelled;
+        /// <summary>Forwarded SAM arming from the inner panel.</summary>
+        public event EventHandler SamSelectRequested;
+        /// <summary>Forwarded SAM disarm from the inner panel (Esc / re-click). Keeps mask.</summary>
+        public event EventHandler SamSelectCancelled;
+        /// <summary>Forwarded SAM clear from the inner panel. Hosts drop mask + points.</summary>
+        public event EventHandler SamClearRequested;
+        /// <summary>Forwarded Show SAM toggle.</summary>
+        public event EventHandler SamShowChanged;
 
         public ImageEditingForm()
         {
@@ -44,8 +53,12 @@ namespace MeesaMultisMaker
             // Create the editing panel
             _editingPanel = new ImageEditingPanel();
             _editingPanel.Dock = DockStyle.Fill;
-            _editingPanel.EyedropperRequested += (s, e) => EyedropperRequested?.Invoke(this, EventArgs.Empty);
+            _editingPanel.EyedropperRequested += (s, e) => EyedropperRequested?.Invoke(this, e);
             _editingPanel.EyedropperCancelled += (s, e) => EyedropperCancelled?.Invoke(this, EventArgs.Empty);
+            _editingPanel.SamSelectRequested += (s, e) => SamSelectRequested?.Invoke(this, e);
+            _editingPanel.SamSelectCancelled += (s, e) => SamSelectCancelled?.Invoke(this, e);
+            _editingPanel.SamClearRequested += (s, e) => SamClearRequested?.Invoke(this, e);
+            _editingPanel.SamShowChanged += (s, e) => SamShowChanged?.Invoke(this, e);
 
             // Wire up events
             _editingPanel.ApplyClicked += (s, e) =>
@@ -96,8 +109,11 @@ namespace MeesaMultisMaker
                 BackgroundColor = _editingPanel.BackgroundColor,
                 BackgroundThreshold = _editingPanel.BackgroundThreshold,
                 DesaturateEnabled = _editingPanel.DesaturateEnabled,
+                DesaturateTargets = new List<Color>(_editingPanel.DesaturateTargets),
+                DesaturateProtected = new List<Color>(_editingPanel.DesaturateProtected),
                 DesaturateColor = _editingPanel.DesaturateColor,
                 DesaturateTolerance = _editingPanel.DesaturateTolerance,
+                DespeckleMinSize = _editingPanel.DespeckleMinSize,
                 SnapNearGray = _editingPanel.SnapNearGrayEnabled,
                 SnapTolerance = _editingPanel.SnapTolerance
             };
@@ -119,9 +135,21 @@ namespace MeesaMultisMaker
 
         public bool IsEyedropperArmed => _editingPanel?.IsEyedropperArmed ?? false;
 
+        public DesaturatePickKind ArmedPickKind => _editingPanel?.ArmedPickKind ?? DesaturatePickKind.Targets;
+
         public void ConfirmEyedropper(Color picked)
         {
             _editingPanel?.ConfirmEyedropper(picked);
+        }
+
+        public void ConfirmEyedropper(Color picked, DesaturatePickKind kind)
+        {
+            _editingPanel?.ConfirmEyedropper(picked, kind);
+        }
+
+        public void SetMatchCount(int count)
+        {
+            _editingPanel?.SetMatchCount(count);
         }
 
         public void CancelEyedropper()
@@ -129,10 +157,36 @@ namespace MeesaMultisMaker
             _editingPanel?.CancelEyedropper();
         }
 
+        public bool IsSamArmed => _editingPanel?.IsSamArmed ?? false;
+
+        public bool ShowSam => _editingPanel?.ShowSam ?? true;
+
+        public void CancelSamArming()
+        {
+            _editingPanel?.CancelSamArming();
+        }
+
+        public void ClearSam()
+        {
+            _editingPanel?.ClearSam();
+        }
+
+        public void SetSamInfo(int pointCount, bool hasMask, bool busy)
+        {
+            _editingPanel?.SetSamInfo(pointCount, hasMask, busy);
+        }
+
         private void ImageEditingForm_KeyDown(object sender, KeyEventArgs e)
         {
-            // Esc cancels an armed eyedropper when this floating window has focus.
+            // Esc cancels an armed eyedropper / SAM arming when this floating window has focus.
             // Form1's own KeyDown covers the main canvas focus case.
+            // SAM Esc keeps the last mask; Clear SAM drops it.
+            if (e.KeyCode == Keys.Escape && IsSamArmed)
+            {
+                CancelSamArming();
+                e.Handled = true;
+                return;
+            }
             if (e.KeyCode == Keys.Escape && IsEyedropperArmed)
             {
                 CancelEyedropper();
@@ -175,8 +229,23 @@ namespace MeesaMultisMaker
 
         // Partial-hue prep (exact-gray authoring)
         public bool DesaturateEnabled { get; set; }
-        public Color DesaturateColor { get; set; }
+        public List<Color> DesaturateTargets { get; set; } = new List<Color>();
+        /// <summary>Protected colors: never desaturated, even within tolerance of a target.</summary>
+        public List<Color> DesaturateProtected { get; set; } = new List<Color>();
+        /// <summary>First-target convenience for the single-color case (DesaturateTargets[0] or Red when empty).</summary>
+        public Color DesaturateColor
+        {
+            get { return (DesaturateTargets != null && DesaturateTargets.Count > 0) ? DesaturateTargets[0] : Color.Red; }
+            set
+            {
+                if (DesaturateTargets == null) DesaturateTargets = new List<Color>();
+                if (DesaturateTargets.Count == 0) DesaturateTargets.Add(value);
+                else DesaturateTargets[0] = value;
+            }
+        }
         public int DesaturateTolerance { get; set; }
+        /// <summary>Despeckle min blob size 0-16 (0 = off).</summary>
+        public int DespeckleMinSize { get; set; }
         public bool SnapNearGray { get; set; }
         public int SnapTolerance { get; set; }
     }

@@ -36,9 +36,20 @@ namespace MeesaMultisMaker
         private readonly HuesReader huesReader = new HuesReader();
         private string loadedHuesFolder = null;
 
-        // Hued bitmap cache keyed by (artId, hueId, partial) — mirrors MapViewerForm.Rendering.cs:285-293
-        private readonly Dictionary<(int artId, int hueId, bool partial), Bitmap> huedArtCache
-            = new Dictionary<(int, int, bool), Bitmap>();
+        // Hued bitmap cache keyed by (artId, hueId, partial) — mirrors MapViewerForm.Rendering.cs:285-293.
+        // The hue base is the object's LIVE image (obj.Image), which is replaced
+        // with a new Bitmap on every edit apply, so each entry also stores the
+        // base Image reference. A cache hit requires ReferenceEquals on that
+        // reference; a changed live image recomputes (disposing the stale hued
+        // bitmap). One entry per key — no unbounded growth.
+        private sealed class HuedCacheEntry
+        {
+            public Image BaseImage;
+            public Bitmap Hued;
+        }
+
+        private readonly Dictionary<(int artId, int hueId, bool partial), HuedCacheEntry> huedArtCache
+            = new Dictionary<(int, int, bool), HuedCacheEntry>();
 
         // Tooltip for showing TileData properties on hover
         private ToolTip paletteToolTip;

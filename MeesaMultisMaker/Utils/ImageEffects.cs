@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Linq;
@@ -313,8 +314,10 @@ namespace MeesaMultisMaker.Utils
         public static Bitmap ApplyEffects(Bitmap source, float brightness, float contrast,
             float hue, float saturation, int pixelSize, bool pixelize, int paletteColors,
             int noiseIntensity = 0, int ditherLevels = 0, int edgeDarkening = 0, int colorBands = 0, bool fillHoles = false,
-            bool removeBackground = false, string backgroundMode = "Auto (corners)", Color? customBackgroundColor = null, int backgroundThreshold = 30,
-            Color? desaturateTarget = null, int desaturateTolerance = 30, bool snapNearGray = false, int snapTolerance = 8)
+            bool removeBackground = false, string backgroundMode = "Auto (corners)",             Color? customBackgroundColor = null, int backgroundThreshold = 30,
+            IReadOnlyList<Color> desaturateTargets = null, int desaturateTolerance = 30, bool snapNearGray = false, int snapTolerance = 8,
+            IReadOnlyList<Color> desaturateProtected = null, int despeckleMinSize = 0,
+            Bitmap selectionMask = null)
         {
             Bitmap result = new Bitmap(source);
             Bitmap temp;
@@ -367,12 +370,12 @@ namespace MeesaMultisMaker.Utils
                     result = temp;
                 }
 
-                // Desaturate a picked color range to exact luminance gray so UO
+                // Desaturate picked color ranges to exact luminance gray so UO
                 // partial hues catch those pixels (r==g&&g==b). Runs before
                 // pixelize/palette so later quantization preserves gray equality.
-                if (desaturateTarget.HasValue)
+                if (desaturateTargets != null && desaturateTargets.Count > 0)
                 {
-                    temp = DesaturateColorRange(result, desaturateTarget.Value, desaturateTolerance);
+                    temp = DesaturateColorRange(result, desaturateTargets, desaturateTolerance, desaturateProtected, despeckleMinSize, selectionMask);
                     result.Dispose();
                     result = temp;
                 }
@@ -380,7 +383,7 @@ namespace MeesaMultisMaker.Utils
                 // Snap near-gray antialiased fringes to exact gray.
                 if (snapNearGray)
                 {
-                    temp = SnapNearGray(result, snapTolerance);
+                    temp = SnapNearGray(result, snapTolerance, selectionMask);
                     result.Dispose();
                     result = temp;
                 }
@@ -807,69 +810,138 @@ namespace MeesaMultisMaker.Utils
         }
 
         /// <summary>
-        /// DESATURATE COLOR RANGE (partial-hue prep): replaces pixels matching
-        /// the picked target color (Manhattan RGB distance &lt;= tolerance)
+        /// DESATURATE COLOR RANGES (partial-hue prep): replaces pixels matching
+        /// ANY of the picked target colors (Manhattan RGB distance &lt;= tolerance)
         /// with exact luminance gray (R=G=B=lum, 0.299R+0.587G+0.114B).
-        /// Preserves alpha; transparent pixels are left untouched.
+        /// The same <paramref name="tolerance"/> applies to both lists: a pixel
+        /// desaturates iff (within tolerance of ANY target) AND NOT (within
+        /// tolerance of ANY protected). Protected pixels are never touched,
+        /// even when they also match a target. Preserves alpha; transparent
+        /// pixels are left untouched.
         /// </summary>
         /// <param name="source">Source image (not mutated)</param>
-        /// <param name="target">Picked color to replace</param>
-        /// <param name="tolerance">Manhattan RGB distance 0-765 (UI typically 0-255)</param>
-        public static Bitmap DesaturateColorRange(Bitmap source, Color target, int tolerance)
+        /// <param name="targets">Picked colors to replace</param>
+        /// <param name="tolerance">Manhattan RGB distance 0-765 (UI typically 0-255); shared by targets and protected</param>
+        /// <param name="protectedTargets">Picked colors to never touch (may be null/empty)</param>
+        /// <param name="despeckleMinSize">Drop matched blobs smaller than N px (4-connectivity BFS); 0 disables</param>
+        /// <param name="selectionMask">Optional SAM gate: only mask-white (R&gt;127) pixels change. Null or size-mismatched = unrestricted.</param>
+        public static Bitmap DesaturateColorRange(Bitmap source, IReadOnlyList<Color> targets, int tolerance, IReadOnlyList<Color> protectedTargets, int despeckleMinSize = 0, Bitmap selectionMask = null)
         {
             if (source == null) return null;
+            if (targets == null || targets.Count == 0) return new Bitmap(source);
             if (tolerance < 0) tolerance = 0;
+            if (despeckleMinSize < 0) despeckleMinSize = 0;
 
-            var result = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
+            // Snapshot target + protected channels once so the pixel loop stays cheap.
+            byte[] tr = new byte[targets.Count];
+            byte[] tg = new byte[targets.Count];
+            byte[] tb = new byte[targets.Count];
+            for (int t = 0; t < targets.Count; t++)
+            {
+                tr[t] = targets[t].R;
+                tg[t] = targets[t].G;
+                tb[t] = targets[t].B;
+            }
 
-            BitmapData sourceData = source.LockBits(new Rectangle(0, 0, source.Width, source.Height),
+            byte[] pr = null, pg = null, pb = null;
+            if (protectedTargets != null && protectedTargets.Count > 0)
+            {
+                pr = new byte[protectedTargets.Count];
+                pg = new byte[protectedTargets.Count];
+                pb = new byte[protectedTargets.Count];
+                for (int p = 0; p < protectedTargets.Count; p++)
+                {
+                    pr[p] = protectedTargets[p].R;
+                    pg[p] = protectedTargets[p].G;
+                    pb[p] = protectedTargets[p].B;
+                }
+            }
+
+            int width = source.Width;
+            int height = source.Height;
+            var result = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+
+            BitmapData sourceData = source.LockBits(new Rectangle(0, 0, width, height),
                 ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
             BitmapData resultData = result.LockBits(new Rectangle(0, 0, result.Width, result.Height),
                 ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
             try
             {
-                int bytes = Math.Abs(sourceData.Stride) * source.Height;
+                int stride = Math.Abs(sourceData.Stride);
+                int bytes = stride * height;
                 byte[] sourceBuffer = new byte[bytes];
                 byte[] resultBuffer = new byte[bytes];
 
                 Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
 
-                byte tr = target.R;
-                byte tg = target.G;
-                byte tb = target.B;
-
-                for (int i = 0; i < bytes; i += 4)
+                bool[] gate = BuildSelectionGate(selectionMask, width, height);
+                bool[] mask = new bool[width * height];
+                for (int y = 0; y < height; y++)
                 {
-                    byte b = sourceBuffer[i];
-                    byte g = sourceBuffer[i + 1];
-                    byte r = sourceBuffer[i + 2];
-                    byte a = sourceBuffer[i + 3];
+                    for (int x = 0; x < width; x++)
+                    {
+                        int i = y * stride + x * 4;
+                        byte b = sourceBuffer[i];
+                        byte g = sourceBuffer[i + 1];
+                        byte r = sourceBuffer[i + 2];
+                        byte a = sourceBuffer[i + 3];
 
-                    if (a == 0)
-                    {
-                        resultBuffer[i] = 0;
-                        resultBuffer[i + 1] = 0;
-                        resultBuffer[i + 2] = 0;
-                        resultBuffer[i + 3] = 0;
-                        continue;
-                    }
+                        if (a == 0)
+                        {
+                            mask[y * width + x] = false;
+                            continue;
+                        }
+                        if (gate != null && !gate[y * width + x])
+                        {
+                            mask[y * width + x] = false;
+                            continue;
+                        }
 
-                    int dist = Math.Abs(r - tr) + Math.Abs(g - tg) + Math.Abs(b - tb);
-                    if (dist <= tolerance)
-                    {
-                        byte lum = ComputeLuminanceGray(r, g, b);
-                        resultBuffer[i] = lum;
-                        resultBuffer[i + 1] = lum;
-                        resultBuffer[i + 2] = lum;
-                        resultBuffer[i + 3] = a;
+                        bool match = MatchesAny(r, g, b, tr, tg, tb, tolerance);
+                        if (match && pr != null)
+                            match = !MatchesAny(r, g, b, pr, pg, pb, tolerance);
+                        mask[y * width + x] = match;
                     }
-                    else
+                }
+
+                if (despeckleMinSize > 0)
+                    DespeckleMatches(mask, width, height, despeckleMinSize);
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
                     {
-                        resultBuffer[i] = b;
-                        resultBuffer[i + 1] = g;
-                        resultBuffer[i + 2] = r;
-                        resultBuffer[i + 3] = a;
+                        int i = y * stride + x * 4;
+                        byte b = sourceBuffer[i];
+                        byte g = sourceBuffer[i + 1];
+                        byte r = sourceBuffer[i + 2];
+                        byte a = sourceBuffer[i + 3];
+
+                        if (a == 0)
+                        {
+                            resultBuffer[i] = 0;
+                            resultBuffer[i + 1] = 0;
+                            resultBuffer[i + 2] = 0;
+                            resultBuffer[i + 3] = 0;
+                            continue;
+                        }
+
+                        if (mask[y * width + x])
+                        {
+                            byte lum = ComputeLuminanceGray(r, g, b);
+                            resultBuffer[i] = lum;
+                            resultBuffer[i + 1] = lum;
+                            resultBuffer[i + 2] = lum;
+                            resultBuffer[i + 3] = a;
+                        }
+                        else
+                        {
+                            resultBuffer[i] = b;
+                            resultBuffer[i + 1] = g;
+                            resultBuffer[i + 2] = r;
+                            resultBuffer[i + 3] = a;
+                        }
                     }
                 }
 
@@ -885,13 +957,281 @@ namespace MeesaMultisMaker.Utils
         }
 
         /// <summary>
+        /// Back-compat wrapper: no protection, no despeckle.
+        /// </summary>
+        public static Bitmap DesaturateColorRange(Bitmap source, IReadOnlyList<Color> targets, int tolerance)
+        {
+            return DesaturateColorRange(source, targets, tolerance, null, 0);
+        }
+
+        /// <summary>
+        /// Drops connected components of a match mask that are smaller than
+        /// <paramref name="minSize"/> pixels (4-connectivity BFS). Runs in place
+        /// on <paramref name="mask"/> and returns the same array.
+        /// <paramref name="minSize"/> &lt;= 0 disables (mask returned untouched).
+        /// </summary>
+        public static bool[] DespeckleMatches(bool[] mask, int width, int height, int minSize)
+        {
+            if (mask == null) return null;
+            if (minSize <= 0) return mask;
+            if (width <= 0 || height <= 0) return mask;
+            if (mask.Length < width * height) return mask;
+
+            int total = width * height;
+            var visited = new bool[total];
+            var queue = new Queue<int>();
+            var component = new List<int>();
+            for (int i = 0; i < total; i++)
+            {
+                if (!mask[i] || visited[i]) continue;
+                component.Clear();
+                queue.Clear();
+                queue.Enqueue(i);
+                visited[i] = true;
+                while (queue.Count > 0)
+                {
+                    int cur = queue.Dequeue();
+                    component.Add(cur);
+                    int cx = cur % width;
+                    int cy = cur / width;
+                    if (cx > 0)
+                    {
+                        int n = cur - 1;
+                        if (mask[n] && !visited[n]) { visited[n] = true; queue.Enqueue(n); }
+                    }
+                    if (cx + 1 < width)
+                    {
+                        int n = cur + 1;
+                        if (mask[n] && !visited[n]) { visited[n] = true; queue.Enqueue(n); }
+                    }
+                    if (cy > 0)
+                    {
+                        int n = cur - width;
+                        if (mask[n] && !visited[n]) { visited[n] = true; queue.Enqueue(n); }
+                    }
+                    if (cy + 1 < height)
+                    {
+                        int n = cur + width;
+                        if (mask[n] && !visited[n]) { visited[n] = true; queue.Enqueue(n); }
+                    }
+                }
+                if (component.Count < minSize)
+                {
+                    foreach (int idx in component)
+                        mask[idx] = false;
+                }
+            }
+            return mask;
+        }
+
+        /// <summary>
+        /// Counts pixels that <see cref="DesaturateColorRange"/> would actually
+        /// change: matched (target AND NOT protected, post-despeckle) AND not
+        /// already exact gray. Transparent pixels never count.
+        /// </summary>
+        public static int CountDesaturateMatches(Bitmap source, IReadOnlyList<Color> targets, int tolerance, IReadOnlyList<Color> protectedTargets = null, int despeckleMinSize = 0, Bitmap selectionMask = null)
+        {
+            if (source == null) return 0;
+            if (targets == null || targets.Count == 0) return 0;
+            if (tolerance < 0) tolerance = 0;
+            if (despeckleMinSize < 0) despeckleMinSize = 0;
+
+            byte[] tr = new byte[targets.Count];
+            byte[] tg = new byte[targets.Count];
+            byte[] tb = new byte[targets.Count];
+            for (int t = 0; t < targets.Count; t++)
+            {
+                tr[t] = targets[t].R;
+                tg[t] = targets[t].G;
+                tb[t] = targets[t].B;
+            }
+
+            byte[] pr = null, pg = null, pb = null;
+            if (protectedTargets != null && protectedTargets.Count > 0)
+            {
+                pr = new byte[protectedTargets.Count];
+                pg = new byte[protectedTargets.Count];
+                pb = new byte[protectedTargets.Count];
+                for (int p = 0; p < protectedTargets.Count; p++)
+                {
+                    pr[p] = protectedTargets[p].R;
+                    pg[p] = protectedTargets[p].G;
+                    pb[p] = protectedTargets[p].B;
+                }
+            }
+
+            int width = source.Width;
+            int height = source.Height;
+            if (width <= 0 || height <= 0) return 0;
+
+            BitmapData sourceData = source.LockBits(new Rectangle(0, 0, width, height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                int stride = Math.Abs(sourceData.Stride);
+                int bytes = stride * height;
+                byte[] sourceBuffer = new byte[bytes];
+                Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
+
+                bool[] gate = BuildSelectionGate(selectionMask, width, height);
+                bool[] mask = new bool[width * height];
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        int i = y * stride + x * 4;
+                        byte b = sourceBuffer[i];
+                        byte g = sourceBuffer[i + 1];
+                        byte r = sourceBuffer[i + 2];
+                        byte a = sourceBuffer[i + 3];
+                        if (a == 0) continue;
+                        if (gate != null && !gate[y * width + x]) continue;
+                        bool match = MatchesAny(r, g, b, tr, tg, tb, tolerance);
+                        if (match && pr != null)
+                            match = !MatchesAny(r, g, b, pr, pg, pb, tolerance);
+                        mask[y * width + x] = match;
+                    }
+                }
+
+                if (despeckleMinSize > 0)
+                    DespeckleMatches(mask, width, height, despeckleMinSize);
+
+                int count = 0;
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        if (!mask[y * width + x]) continue;
+                        int i = y * stride + x * 4;
+                        byte b = sourceBuffer[i];
+                        byte g = sourceBuffer[i + 1];
+                        byte r = sourceBuffer[i + 2];
+                        if (r == g && g == b) continue; // already exact gray: no visible change
+                        count++;
+                    }
+                }
+                return count;
+            }
+            finally
+            {
+                source.UnlockBits(sourceData);
+            }
+        }
+
+        /// <summary>
+        /// SAM selection gate: returns null when unrestricted (null mask or
+        /// size mismatch — ignore with no crash), else a WxH bool array where
+        /// true = mask-white (R&gt;127) = allowed. Uses GetPixel so any mask
+        /// pixel format (L-mode PNG, 32bpp) works; art is small so this is cheap.
+        /// </summary>
+        public static bool[] BuildSelectionGate(Bitmap selectionMask, int width, int height)
+        {
+            if (selectionMask == null) return null;
+            try
+            {
+                int mw, mh;
+                try { mw = selectionMask.Width; mh = selectionMask.Height; }
+                catch { return null; }
+                if (mw != width || mh != height) return null;
+                if (width <= 0 || height <= 0) return null;
+                var gate = new bool[width * height];
+                for (int y = 0; y < height; y++)
+                    for (int x = 0; x < width; x++)
+                    {
+                        Color c;
+                        try { c = selectionMask.GetPixel(x, y); }
+                        catch { return null; }
+                        gate[y * width + x] = c.R > 127;
+                    }
+                return gate;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Paint-time SAM overlay: cyan tint where the gate is white, transparent
+        /// elsewhere. Returns null when unrestricted. Caller owns the bitmap.
+        /// Never mutates inputs. Paint-time only.
+        /// </summary>
+        public static Bitmap BuildSamOverlay(Bitmap source, Bitmap selectionMask)
+        {
+            if (source == null || selectionMask == null) return null;
+            try
+            {
+                int w, h, mw, mh;
+                try { w = source.Width; h = source.Height; mw = selectionMask.Width; mh = selectionMask.Height; }
+                catch { return null; }
+                if (w <= 0 || h <= 0 || mw != w || mh != h) return null;
+                var result = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+                BitmapData srcData = null, maskData = null, resData = null;
+                try
+                {
+                    srcData = source.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                    // Mask may be 8bpp; copy via GetPixel path into gate instead of LockBits.
+                    bool[] gate = BuildSelectionGate(selectionMask, w, h);
+                    if (gate == null) { result.Dispose(); return null; }
+                    resData = result.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                    int stride = Math.Abs(srcData.Stride);
+                    int bytes = stride * h;
+                    byte[] srcBuf = new byte[bytes];
+                    byte[] resBuf = new byte[bytes];
+                    Marshal.Copy(srcData.Scan0, srcBuf, 0, bytes);
+                    for (int y = 0; y < h; y++)
+                        for (int x = 0; x < w; x++)
+                        {
+                            int i = y * stride + x * 4;
+                            if (!gate[y * w + x]) { resBuf[i] = 0; resBuf[i + 1] = 0; resBuf[i + 2] = 0; resBuf[i + 3] = 0; continue; }
+                            byte a = srcBuf[i + 3];
+                            if (a == 0) { resBuf[i] = 0; resBuf[i + 1] = 0; resBuf[i + 2] = 0; resBuf[i + 3] = 0; continue; }
+                            // Cyan tint ~35% alpha over masked region.
+                            resBuf[i] = 255;       // B
+                            resBuf[i + 1] = 255;   // G
+                            resBuf[i + 2] = 0;     // R
+                            resBuf[i + 3] = 90;
+                        }
+                    Marshal.Copy(resBuf, 0, resData.Scan0, bytes);
+                }
+                finally
+                {
+                    try { if (srcData != null) source.UnlockBits(srcData); } catch { }
+                    try { if (maskData != null) selectionMask.UnlockBits(maskData); } catch { }
+                    try { if (resData != null) result.UnlockBits(resData); } catch { }
+                }
+                return result;
+            }
+            catch { return null; }
+        }
+
+        private static bool MatchesAny(byte r, byte g, byte b, byte[] cr, byte[] cg, byte[] cb, int tolerance)
+        {
+            if (cr == null || cr.Length == 0) return false;
+            for (int t = 0; t < cr.Length; t++)
+            {
+                int dist = Math.Abs(r - cr[t]) + Math.Abs(g - cg[t]) + Math.Abs(b - cb[t]);
+                if (dist <= tolerance) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Single-target wrapper around the multi-target overload; a pixel
+        /// desaturates when its Manhattan RGB distance to <paramref name="target"/>
+        /// is &lt;= <paramref name="tolerance"/>.
+        /// </summary>
+        public static Bitmap DesaturateColorRange(Bitmap source, Color target, int tolerance)
+        {
+            return DesaturateColorRange(source, new Color[] { target }, tolerance);
+        }
+
+        /// <summary>
         /// NEAR-GRAY SNAP: snaps near-gray pixels (max-min channel spread
         /// &lt;= tolerance, default ~8) to exact luminance gray. Fixes
         /// antialiased fringes escaping partial hue. Preserves alpha.
         /// </summary>
         /// <param name="source">Source image (not mutated)</param>
         /// <param name="tolerance">Max channel spread 0-255 (default 8)</param>
-        public static Bitmap SnapNearGray(Bitmap source, int tolerance = 8)
+        /// <param name="selectionMask">Optional SAM gate: only mask-white (R&gt;127) pixels change. Null or size-mismatched = unrestricted.</param>
+        public static Bitmap SnapNearGray(Bitmap source, int tolerance = 8, Bitmap selectionMask = null)
         {
             if (source == null) return null;
             if (tolerance < 0) tolerance = 0;
@@ -904,6 +1244,9 @@ namespace MeesaMultisMaker.Utils
             BitmapData resultData = result.LockBits(new Rectangle(0, 0, result.Width, result.Height),
                 ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
 
+            bool[] snapGate = BuildSelectionGate(selectionMask, source.Width, source.Height);
+            int snapW = source.Width;
+            int snapStride = 0;
             try
             {
                 int bytes = Math.Abs(sourceData.Stride) * source.Height;
@@ -911,6 +1254,7 @@ namespace MeesaMultisMaker.Utils
                 byte[] resultBuffer = new byte[bytes];
 
                 Marshal.Copy(sourceData.Scan0, sourceBuffer, 0, bytes);
+                snapStride = Math.Abs(sourceData.Stride);
 
                 for (int i = 0; i < bytes; i += 4)
                 {
@@ -926,6 +1270,20 @@ namespace MeesaMultisMaker.Utils
                         resultBuffer[i + 2] = 0;
                         resultBuffer[i + 3] = 0;
                         continue;
+                    }
+
+                    if (snapGate != null)
+                    {
+                        int px = (i % snapStride) / 4;
+                        int py = i / snapStride;
+                        if (py < 0 || py >= source.Height || px < 0 || px >= snapW || !snapGate[py * snapW + px])
+                        {
+                            resultBuffer[i] = b;
+                            resultBuffer[i + 1] = g;
+                            resultBuffer[i + 2] = r;
+                            resultBuffer[i + 3] = a;
+                            continue;
+                        }
                     }
 
                     int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);

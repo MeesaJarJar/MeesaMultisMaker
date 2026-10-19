@@ -344,6 +344,7 @@
     <Compile Include="UndoRedoManager.cs" />
     <Compile Include="UpdateChecker.cs" />
     <Compile Include="Utils\ImageEffects.cs" />
+    <Compile Include="Utils\SamService.cs" />
     <Compile Include="Mul\MultiReader.cs" />
     <Compile Include="AppConfig.cs" />
     <Compile Include="HolographicTheme.cs" />
