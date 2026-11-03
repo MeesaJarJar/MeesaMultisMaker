@@ -23,7 +23,8 @@ namespace MeesaMultisMaker.ComfyUI
     /// Size mapping: the user's graph sizes the render from the scaled input
     /// image (129 -&gt; 134 -&gt; 128/130 links preserved). The app's width/height
     /// are mapped onto (a) ImageScaleToTotalPixels megapixels = w*h/1e6 clamped
-    /// to [0.1, 1.0] (0.2 fallback, the file's value), and (b) the widget
+    /// to [0.1, MAX_MEGAPIXELS] (0.2 fallback, the file's value; max = 16.0 per
+    /// the node's input_config, so a 4096x4096 request clamps to 16.0MP), and (b) the widget
     /// defaults of EmptyFlux2LatentImage(128) and Flux2Scheduler(130) which are
     /// set to the requested w/h (they are link-overridden at runtime but record
     /// intent and serve as fallbacks).
@@ -33,6 +34,12 @@ namespace MeesaMultisMaker.ComfyUI
         public const string DEFAULT_UNET = Flux2KleinWorkflow.DEFAULT_UNET;
         public const string DEFAULT_CLIP = Flux2KleinWorkflow.DEFAULT_CLIP;
         public const string DEFAULT_VAE = Flux2KleinWorkflow.DEFAULT_VAE;
+
+        /// <summary>Hard ceiling honoring the AI panels (64-4096 per side).</summary>
+        public const int MAX_DIMENSION = 4096;
+
+        /// <summary>ImageScaleToTotalPixels input_config max is 16.0MP — cap here so 4096x4096 clamps instead of failing validation.</summary>
+        public const double MAX_MEGAPIXELS = 16.0;
 
         // Fixed by the user's workflow: 4 steps, cfg 1.0. No denoise input exists
         // on this reference-edit graph, so the old MIN_STEPS/EffectiveSteps
@@ -65,12 +72,17 @@ namespace MeesaMultisMaker.ComfyUI
             vaeName = EscapeJson(string.IsNullOrWhiteSpace(vaeName) ? DEFAULT_VAE : vaeName);
             samplerName = EscapeJson(string.IsNullOrWhiteSpace(samplerName) ? "euler" : samplerName);
 
+            // Respect whatever the user set, capped at MAX_DIMENSION (4096).
+            // Minimums unchanged: 16px floor, 1024 fallback for non-positive input.
             int reqW = Math.Max(16, width <= 0 ? 1024 : width);
             int reqH = Math.Max(16, height <= 0 ? 1024 : height);
+            reqW = Math.Min(MAX_DIMENSION, reqW);
+            reqH = Math.Min(MAX_DIMENSION, reqH);
             double megapixels = reqW * (double)reqH / 1000000.0;
             if (double.IsNaN(megapixels) || double.IsInfinity(megapixels))
                 megapixels = 0.2;
-            megapixels = Math.Max(0.1, Math.Min(1.0, megapixels));
+            // Node 129 (ImageScaleToTotalPixels) enforces megapixels max 16.0 — clamp here.
+            megapixels = Math.Max(0.1, Math.Min(MAX_MEGAPIXELS, megapixels));
 
             var inv = CultureInfo.InvariantCulture;
             string mpStr = megapixels.ToString("0.###", inv);

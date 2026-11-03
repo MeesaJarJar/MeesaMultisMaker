@@ -870,18 +870,18 @@ namespace MeesaMultisMaker.Controls
 
             // Resolution Width/Height row - better spacing
             var lblWidth = CreateThemedLabel("Width", 5, y + 3, 40);
-            panelTooltip.SetToolTip(lblWidth, "Output image width in pixels (64-2048)");
+            panelTooltip.SetToolTip(lblWidth, "Output image width in pixels (64-4096)");
             contentPanel.Controls.Add(lblWidth);
 
-            widthUpDown = CreateThemedNumericUpDown(50, y, 55, 64, 2048, 512, 64);
+            widthUpDown = CreateThemedNumericUpDown(50, y, 55, 64, 4096, 512, 64);
             panelTooltip.SetToolTip(widthUpDown, "Output image width in pixels");
             contentPanel.Controls.Add(widthUpDown);
 
             var lblHeight = CreateThemedLabel("Height", 115, y + 3, 45);
-            panelTooltip.SetToolTip(lblHeight, "Output image height in pixels (64-2048)");
+            panelTooltip.SetToolTip(lblHeight, "Output image height in pixels (64-4096)");
             contentPanel.Controls.Add(lblHeight);
 
-            heightUpDown = CreateThemedNumericUpDown(165, y, 55, 64, 2048, 512, 64);
+            heightUpDown = CreateThemedNumericUpDown(165, y, 55, 64, 4096, 512, 64);
             panelTooltip.SetToolTip(heightUpDown, "Output image height in pixels");
             contentPanel.Controls.Add(heightUpDown);
 

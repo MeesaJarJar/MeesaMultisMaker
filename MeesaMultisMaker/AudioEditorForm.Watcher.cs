@@ -1750,7 +1750,6 @@ namespace MeesaMultisMaker
             public string Prompt = string.Empty;
             public string Negative = string.Empty;
             public long Seed;
-            public string Workflow = string.Empty;
             public double RequestSec;
             public string LocalPath = string.Empty;
             public string PlayPath = string.Empty;
@@ -1762,13 +1761,13 @@ namespace MeesaMultisMaker
         }
 
         private async Task<WatchTake> WatchRenderOnce(string kind, bool foley,
-            string prompt, string negative, string workflow, double duration,
+            string prompt, string negative, double duration,
             int steps, string catOverride, CancellationToken token)
         {
             try
             {
                 string audioId = AudioWorkflow.NewAudioId(kind);
-                var built = AudioWorkflow.BuildTextToAudio(workflow, prompt,
+                var built = AudioWorkflow.BuildTextToAudio(prompt,
                     duration, -1, steps, false, catOverride, negative);
                 if (_comfy == null) _comfy = new ComfyUIClient(comfyUrlTextBox.Text.Trim());
                 string promptId = await _comfy.QueuePrompt(built.PromptJson, Guid.NewGuid().ToString());
@@ -1858,7 +1857,6 @@ namespace MeesaMultisMaker
                     Prompt = prompt,
                     Negative = negative ?? string.Empty,
                     Seed = built.Seed,
-                    Workflow = workflow,
                     RequestSec = duration,
                     LocalPath = localPath,
                     PlayPath = playPath,
@@ -1886,7 +1884,7 @@ namespace MeesaMultisMaker
             string kind = foley ? "WatcherFoley" : "WatcherMusic";
             try
             {
-                string prompt, workflow;
+                string prompt;
                 double duration;
                 int steps;
                 string cleanBase = null;
@@ -1896,7 +1894,6 @@ namespace MeesaMultisMaker
                     string clean = CleanPrompt(vlPrompt, "quiet ambient room tone");
                     cleanBase = clean;
                     prompt = clean + " Length: " + (int)duration + " seconds";
-                    workflow = SafeText(() => workflowSfxBox.Text, AudioWorkflow.DefaultSfxWorkflowPath());
                     steps = SafeNum(() => (int)stepsSfxNum.Value, 8);
                 }
                 else
@@ -1908,21 +1905,7 @@ namespace MeesaMultisMaker
                     string clean = CleanPrompt(vlPrompt, "calm ambient loop");
                     cleanBase = clean;
                     prompt = clean + " Length: " + (int)duration + " seconds";
-                    workflow = SafeText(() => workflowMusicBox.Text, AudioWorkflow.DefaultMusicWorkflowPath());
                     steps = SafeNum(() => (int)stepsMusicNum.Value, 8);
-                }
-                if (string.IsNullOrEmpty(workflow) || !File.Exists(workflow))
-                {
-                    Log("Watcher " + kind + " skipped: workflow not found.");
-                    try
-                    {
-                        DateTime retry = DateTime.Now + TimeSpan.FromSeconds(15);
-                        if (foley) { if (retry > _nextFoleyDue) _nextFoleyDue = retry; }
-                        else { if (retry > _nextMusicDue) _nextMusicDue = retry; }
-                    }
-                    catch { }
-                    if (foley) _foleyGenBusy = false; else _musicGenBusy = false;
-                    return;
                 }
                 string catOverride = foley ? "SFX" : "Music";
                 // Watcher layers inherit the user's negative boxes for
@@ -1942,7 +1925,7 @@ namespace MeesaMultisMaker
                 while (takes.Count < 2)
                 {
                     var take = await WatchRenderOnce(kind, foley, attemptPrompt, attemptNeg,
-                        workflow, duration, steps, catOverride, token);
+                        duration, steps, catOverride, token);
                     if (take == null)
                     {
                         if (token.IsCancellationRequested) return;
@@ -2040,7 +2023,6 @@ namespace MeesaMultisMaker
                 }
                 catch { }
                 prompt = win.Prompt;
-                workflow = win.Workflow;
                 duration = win.RequestSec;
                 string playPath = win.PlayPath;
                 string addPath = win.AddPath;
@@ -2134,7 +2116,6 @@ namespace MeesaMultisMaker
                 string sceneDesc = vlPrompt + gateSuffix;
                 string watchPrompt = prompt;
                 long watchSeed = winSeed;
-                string watchWorkflow = workflow;
                 double watchDur = airWave2 != null ? airWave2.DurationSec : duration;
                 string watchName = Path.GetFileName(playPath);
                 // Auto-caption the aired take: the library becomes
@@ -2189,7 +2170,7 @@ namespace MeesaMultisMaker
                                 Kind = foley ? "WatcherFoley" : "WatcherMusic",
                                 Prompt = watchPrompt,
                                 Seed = watchSeed,
-                                Workflow = watchWorkflow,
+                                Workflow = string.Empty,
                                 AudioPath = playPath,
                                 DurationSec = airWave2 != null ? airWave2.DurationSec : 0,
                                 Scene = sceneDesc,

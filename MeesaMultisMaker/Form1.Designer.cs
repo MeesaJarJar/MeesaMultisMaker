@@ -262,7 +262,7 @@ namespace MeesaMultisMaker
  // widthNumericUpDown
  // 
  this.widthNumericUpDown.Location = new System.Drawing.Point(54,14);
- this.widthNumericUpDown.Maximum = new decimal(new int[] {50,0,0,0});
+  this.widthNumericUpDown.Maximum = new decimal(new int[] {1000,0,0,0});
  this.widthNumericUpDown.Minimum = new decimal(new int[] {1,0,0,0});
  this.widthNumericUpDown.Name = "widthNumericUpDown";
  this.widthNumericUpDown.Size = new System.Drawing.Size(50,20);
@@ -281,7 +281,7 @@ namespace MeesaMultisMaker
  // heightNumericUpDown
  // 
  this.heightNumericUpDown.Location = new System.Drawing.Point(157,14);
- this.heightNumericUpDown.Maximum = new decimal(new int[] {50,0,0,0});
+  this.heightNumericUpDown.Maximum = new decimal(new int[] {1000,0,0,0});
  this.heightNumericUpDown.Minimum = new decimal(new int[] {1,0,0,0});
  this.heightNumericUpDown.Name = "heightNumericUpDown";
  this.heightNumericUpDown.Size = new System.Drawing.Size(50,20);

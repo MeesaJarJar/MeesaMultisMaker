@@ -1,4 +1,5 @@
 using MeesaMultisMaker.ThreeD;
+using MeesaMultisMaker.Utils;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -6,6 +7,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -243,9 +245,23 @@ namespace MeesaMultisMaker
         private NumericUpDown _retexStrNum;
         private CheckBox _retexFrontChk;
         private NumericUpDown _moveXNum, _moveYNum, _moveZNum, _explodeNum, _hueIdNum;
+        private bool _applyingHue; // guard: programmatic Hue ID sets must not retrigger immediate apply
         private NumericUpDown _boxX0, _boxX1, _boxY0, _boxY1, _boxZ0, _boxZ1;
         private CheckBox _huePartialChk;
         private Label _hueStatusLabel, _samStatusLabel;
+        private Button _samAiBtn, _samInstallBtn;
+        private CancellationTokenSource _samInstallCts;
+        // Select-by-color desaturate targets. History only: each Add pick
+        // booms immediately (one PushMutateUndo step per target); Remove /
+        // Clear just drop list entries and never recolor. Tolerance is read
+        // at pick time; changing it later does not retro-apply.
+        private List<Color> _desatTargets = new List<Color>();
+        private ListBox _desatListBox;
+        private NumericUpDown _desatTolNum;
+        private Label _desatStatusLabel;
+        private Button _desatPickBtn;
+        private bool _desatPickArmed;
+        private Cursor _desatPrevCursor;
         private Color _tintColor = Color.OrangeRed;
         private int _lastClickIdx = -1;
         private Point _lastClickPt;
@@ -467,21 +483,98 @@ namespace MeesaMultisMaker
 
             y = AddGroup(left, y, "UO hue (hues.mul)");
             left.Controls.Add(MakeLabel("Hue id:", 10, y + 4, 52, 20));
-            _hueIdNum = MkNum(left, 64, y, 1, 3000, 1, 1, 0);
+            _hueIdNum = MkNum(left, 64, y, 0, 3000, 1, 1, 0);
             _huePartialChk = new CheckBox { Location = new Point(132, y + 2), Width = 70, Height = 20, Text = "Partial", Checked = true };
             left.Controls.Add(_huePartialChk);
-            var bHueGo = MkBtn(left, "Apply", 208, y, 60);
-            bHueGo.Click += delegate { ShapeOp("uohue"); };
+            // Immediate apply: any user edit of the Hue ID runs the same
+            // restore-then-hue path the old Apply button used. Guarded so
+            // programmatic sets (Revert / defaults) do not double-apply.
+            _hueIdNum.ValueChanged += delegate
+            {
+                if (_applyingHue) return;
+                ShapeOp("uohue");
+            };
+            var bHueRevert = MkBtn(left, "Revert", 208, y, 60);
+            bHueRevert.Click += delegate
+            {
+                try
+                {
+                    _applyingHue = true;
+                    if (_hueIdNum != null && _hueIdNum.Value != 0)
+                        _hueIdNum.Value = 0;
+                }
+                finally { _applyingHue = false; }
+                ShapeOp("uohue_revert");
+            };
+            try
+            {
+                var hueTip = new ToolTip { ShowAlways = true };
+                hueTip.SetToolTip(_hueIdNum, "hues.mul Hue ID. Applies immediately. 0 restores original automatically.");
+                hueTip.SetToolTip(bHueRevert, "Restore the pre-hue original colors (same as Hue ID 0).");
+            }
+            catch { }
             y += 26;
-            _hueStatusLabel = MakeLabel("", 10, y, 310, 18);
+            _hueStatusLabel = MakeLabel("Hue applies immediately. 0 restores original.", 10, y, 310, 18);
             left.Controls.Add(_hueStatusLabel);
             y += 22;
 
+            y = AddGroup(left, y, "Select by Color → desaturate");
+            left.Controls.Add(MakeLabel("Match tol:", 10, y + 4, 64, 20));
+            _desatTolNum = MkNum(left, 76, y, 0, 765, 5, 30, 0);
+            var bDesatAdd = MkBtn(left, "Pick + desaturate…", 144, y, 130);
+            bDesatAdd.Click += DesatAdd_Click;
+            _desatPickBtn = bDesatAdd;
+            var bDesatClear = MkBtn(left, "Clear", 278, y, 42);
+            bDesatClear.Click += DesatClear_Click;
+            try
+            {
+                var desatTip = new ToolTip { ShowAlways = true };
+                desatTip.SetToolTip(_desatTolNum, "Manhattan RGB distance 0-765. Read at pick time; mirrors 2D PARTIAL HUE PREP.");
+                desatTip.SetToolTip(bDesatAdd, "Click to arm, then click the model to sample that splat's color (eyedropper). Every still-colored splat within tolerance desaturates immediately (one undo step). Already-gray splats are skipped. Esc cancels; stays armed for multi-picks.");
+                desatTip.SetToolTip(bDesatClear, "Drop all listed targets (does not recolor). Undo steps still revert each boom.");
+            }
+            catch { }
+            y += 28;
+            _desatListBox = new ListBox
+            {
+                Location = new Point(10, y), Width = 200, Height = 56,
+                DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 16
+            };
+            _desatListBox.DrawItem += DesatList_DrawItem;
+            left.Controls.Add(_desatListBox);
+            var bDesatRemove = MkBtn(left, "Remove", 214, y, 60);
+            bDesatRemove.Click += DesatRemove_Click;
+            var bDesatBoom = MkBtn(left, "Re-run", 278, y, 42);
+            bDesatBoom.Click += DesatRerun_Click;
+            try
+            {
+                var desatTip2 = new ToolTip { ShowAlways = true };
+                desatTip2.SetToolTip(_desatListBox, "Picked targets (history). Double-click or Re-run re-applies the selected target at the current tolerance.");
+                desatTip2.SetToolTip(bDesatRemove, "Drop the selected target (does not recolor).");
+                desatTip2.SetToolTip(bDesatBoom, "Desaturate again with the selected target at the current tolerance (one more undo step).");
+            }
+            catch { }
+            y += 60;
+            _desatStatusLabel = MakeLabel("Pick a color to desaturate matches.", 10, y, 310, 18);
+            left.Controls.Add(_desatStatusLabel);
+            y += 22;
+
             y = AddGroup(left, y, "AI / mask / light / spin");
-            var bAi = MkBtn(left, "AI Select (SAM)", 10, y, 150);
+            var bAi = MkBtn(left, "AI Select (SAM)", 10, y, 110);
             bAi.Click += delegate { var t = AiSelectAsync(); };
-            var bMask = MkBtn(left, "Load mask…", 166, y, 100);
+            _samAiBtn = bAi;
+            var bMask = MkBtn(left, "Load mask…", 126, y, 80);
             bMask.Click += MaskImport_Click;
+            var bSamInstall = MkBtn(left, "Install SAM", 212, y, 98);
+            bSamInstall.Click += delegate { var t = InstallSamPackAsync(); };
+            _samInstallBtn = bSamInstall;
+            try
+            {
+                var samTip = new ToolTip { ShowAlways = true };
+                samTip.SetToolTip(bAi, "One-click select via the ComfyUI SAM node pack. Offers auto-install when missing.");
+                samTip.SetToolTip(bSamInstall, "Install the comfyui_segment_anything node pack + SAM weights on the ComfyUI server (one click, ~375 MB).");
+            }
+            catch { }
             y += 30;
             _samStatusLabel = MakeLabel("", 10, y, 310, 30);
             left.Controls.Add(_samStatusLabel);
@@ -494,6 +587,20 @@ namespace MeesaMultisMaker
             bRel.Click += delegate { ShapeOp("relight"); };
             var bSpin = MkBtn(left, "Spintable", 222, y, 90);
             bSpin.Click += Spintable_Click;
+            y += 30;
+            var bUoStyle = MkBtn(left, "UO Style: Off", 10, y, 150);
+            bUoStyle.Click += delegate
+            {
+                _uoStyleViewer = !_uoStyleViewer;
+                bUoStyle.Text = _uoStyleViewer ? "UO Style: On" : "UO Style: Off";
+                QueueRender();
+            };
+            try
+            {
+                var uoTip = new ToolTip { ShowAlways = true };
+                uoTip.SetToolTip(bUoStyle, "Toggle UO pixel look for viewer + export (pixelize + banding + dither).");
+            }
+            catch { }
             y += 30;
 
             SetEditMode(0);
@@ -1016,8 +1123,375 @@ namespace MeesaMultisMaker
             AfterEdit(name + ": recolored " + n + " splats (" + Scope() + ").");
         }
 
+        #region Select-by-color desaturate
+
+        /// <summary>
+        /// One-shot desaturate, NOT selection building. Scope follows the
+        /// editor convention: UseSel() (selection when non-empty, else whole
+        /// model). The _sel set itself is never modified here.
+        /// Immediate-on-add: each picked target booms once with its own
+        /// PushMutateUndo snapshot, so generic Undo steps back per color.
+        /// Already-gray splats are skipped by the op, so repeat booms only
+        /// touch still-colored splats and grays never shift.
+        /// </summary>
+        private void DesatBoom(Color target, int listIndex)
+        {
+            if (_model == null)
+            {
+                if (_desatStatusLabel != null) _desatStatusLabel.Text = "No model loaded.";
+                Log("Desaturate: no model loaded.");
+                return;
+            }
+            if (!EnsureSel()) return;
+            int tol = _desatTolNum != null ? (int)_desatTolNum.Value : 30;
+            var matches = SplatOps.CollectDesaturateMatches(_model, UseSel(), target, tol);
+            if (matches.Count == 0)
+            {
+                if (_desatStatusLabel != null)
+                    _desatStatusLabel.Text = string.Format("Desaturated 0 splats (target {0}, tol {1}, {2}).", listIndex + 1, tol, Scope());
+                Log(string.Format("Desaturate target {0} ({1},{2},{3} tol {4}): no matches ({5}).",
+                    listIndex + 1, target.R, target.G, target.B, tol, Scope()));
+                return;
+            }
+            PushMutateUndo(matches);
+            int n = SplatOps.DesaturateIndices(_model, matches);
+            if (_desatStatusLabel != null)
+                _desatStatusLabel.Text = string.Format("Desaturated {0} splats (target {1}, {2}).", n, listIndex + 1, Scope());
+            AfterEdit(string.Format("Desaturated {0} splats (target {1} {2},{3},{4} tol {5}, {6}).",
+                n, listIndex + 1, target.R, target.G, target.B, tol, Scope()));
+        }
+
+        private void DesatAdd_Click(object sender, EventArgs e)
+        {
+            // Viewport eyedropper: arm sampling mode (no ColorDialog — the
+            // user explicitly rejects the mspaint-style picker). Re-click
+            // toggles back off.
+            if (_desatPickArmed)
+            {
+                DesatDisarm("Pick cancelled.");
+                return;
+            }
+            if (_model == null)
+            {
+                if (_desatStatusLabel != null) _desatStatusLabel.Text = "No model loaded.";
+                Log("Desaturate: no model loaded.");
+                return;
+            }
+            if (_quad)
+            {
+                if (_desatStatusLabel != null) _desatStatusLabel.Text = "Exit Quad view to pick.";
+                Log("Desaturate pick: exit Quad view to pick (main viewport only).");
+                return;
+            }
+            _desatPickArmed = true;
+            try
+            {
+                if (viewport != null)
+                {
+                    _desatPrevCursor = viewport.Cursor;
+                    viewport.Cursor = Cursors.Cross;
+                    try { viewport.Focus(); }
+                    catch { }
+                }
+                if (_desatPickBtn != null) _desatPickBtn.Text = "Stop picking";
+            }
+            catch { }
+            if (_desatStatusLabel != null)
+                _desatStatusLabel.Text = "Click the model to sample a color… (Esc cancels).";
+            Log("Desaturate pick armed: click the model to sample.");
+        }
+
+        private void DesatDisarm(string msg)
+        {
+            _desatPickArmed = false;
+            try
+            {
+                if (viewport != null) viewport.Cursor = _desatPrevCursor ?? Cursors.Default;
+            }
+            catch { }
+            _desatPrevCursor = null;
+            try
+            {
+                if (_desatPickBtn != null) _desatPickBtn.Text = "Pick + desaturate…";
+            }
+            catch { }
+            if (!string.IsNullOrEmpty(msg))
+            {
+                if (_desatStatusLabel != null) _desatStatusLabel.Text = msg;
+                Log("Desaturate pick: " + msg);
+            }
+        }
+
+        /// <summary>
+        /// Frontmost splat whose projected center falls within maxDist px of
+        /// the click. Depth matches the painter (far-first ascending): the
+        /// largest depth is the visible topmost splat. Same object matrix +
+        /// yaw/pitch math as NearestSplat/ProjectAll, so the pick agrees
+        /// with what the viewport draws.
+        /// </summary>
+        private int FrontmostSplat(Point loc, float maxDist)
+        {
+            if (_model == null) return -1;
+            try
+            {
+                bool uo = UoMode();
+                float pitch = pitchNumeric != null ? (float)pitchNumeric.Value : 26.57f;
+                int w, h;
+                double fit, cx, cy;
+                ViewportCam(out w, out h, out fit, out cx, out cy);
+                double[] robj = EditRobjScaled();
+                double yawRad = _yaw * Math.PI / 180.0;
+                double cosY = Math.Cos(yawRad), sinY = Math.Sin(yawRad);
+                double pitchRad = pitch * Math.PI / 180.0;
+                double cosP = Math.Cos(pitchRad), sinP = Math.Sin(pitchRad);
+                var pts = _model.Points;
+                int best = -1;
+                double bestDepth = double.NegativeInfinity;
+                double bestD2 = maxDist * maxDist;
+                double maxD2 = bestD2;
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    var p = pts[i];
+                    if (p.Opacity < 0.03f) continue;
+                    double qx, qy, qz;
+                    SplatRenderer.TransformPoint(robj, p.X, p.Y, p.Z, out qx, out qy, out qz);
+                    float sx, sy;
+                    ProjectYawOnly((float)qx, (float)qy, (float)qz, uo, pitch, fit, cx, cy, out sx, out sy);
+                    double dx = sx - loc.X, dy = sy - loc.Y;
+                    double d2 = dx * dx + dy * dy;
+                    if (d2 > maxD2) continue;
+                    double x1 = qx * cosY + qz * sinY;
+                    double z1 = -qx * sinY + qz * cosY;
+                    double depth;
+                    if (uo) depth = x1 + z1 + qy;
+                    else depth = qy * sinP + z1 * cosP;
+                    if (best < 0 || depth > bestDepth + 1e-9 ||
+                        (Math.Abs(depth - bestDepth) < 1e-9 && d2 < bestD2))
+                    {
+                        best = i;
+                        bestDepth = depth;
+                        bestD2 = d2;
+                    }
+                }
+                return best;
+            }
+            catch { return -1; }
+        }
+
+        /// <summary>
+        /// Sample the viewport bitmap at control coords (already composited
+        /// GPU layer + GDI base, so no extra offscreen render or Y-flip is
+        /// needed). True only for opaque model pixels; transparent
+        /// background is a miss. Only used as a fallback when no splat
+        /// center is near the click (large splats cover pixels beyond the
+        /// center radius), and only when the background is transparent —
+        /// with an opaque BG every miss would sample the BG color.
+        /// </summary>
+        private bool TrySampleViewBitmap(Point loc, out Color sampled)
+        {
+            sampled = Color.Empty;
+            try
+            {
+                var bmp = _viewBitmap;
+                if (bmp == null || viewport == null || viewport.Image == null) return false;
+                try
+                {
+                    if (transparentCheckBox != null && !transparentCheckBox.Checked) return false;
+                }
+                catch { }
+                int imgW = bmp.Width, imgH = bmp.Height;
+                int ctlW = viewport.Width, ctlH = viewport.Height;
+                int px = loc.X, py = loc.Y;
+                if (imgW != ctlW || imgH != ctlH)
+                {
+                    // SizeMode.CenterImage centers a mismatched image.
+                    px -= (ctlW - imgW) / 2;
+                    py -= (ctlH - imgH) / 2;
+                }
+                if (px < 0 || py < 0 || px >= imgW || py >= imgH) return false;
+                Color p = bmp.GetPixel(px, py);
+                if (p.A < 16) return false;
+                sampled = Color.FromArgb(p.R, p.G, p.B);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// Armed viewport click: sample the splat under the cursor (RGB of
+        /// the topmost splat, like the 2D canvas eyedropper), append to the
+        /// target history and boom immediately via the existing undo +
+        /// status path. Misses (background) stay armed with a hint.
+        /// Stays armed after a hit too, for rapid multi-picks; Esc or the
+        /// Pick button disarms.
+        /// </summary>
+        private bool DesatPickSample(Point loc)
+        {
+            if (_model == null)
+            {
+                DesatDisarm("No model loaded.");
+                return true;
+            }
+            Color sampled;
+            string source = "splat";
+            int idx = FrontmostSplat(loc, 14f);
+            if (idx >= 0)
+            {
+                var p = _model.Points[idx];
+                sampled = Color.FromArgb(p.R, p.G, p.B);
+                _lastClickIdx = idx;
+                _lastClickPt = loc;
+            }
+            else if (TrySampleViewBitmap(loc, out sampled))
+            {
+                source = "pixel";
+            }
+            else
+            {
+                if (_desatStatusLabel != null)
+                    _desatStatusLabel.Text = "No splat under cursor — click the model (Esc cancels).";
+                Log("Desaturate pick: no splat under cursor (staying armed).");
+                return true;
+            }
+            _desatTargets.Add(sampled);
+            DesatRefreshList();
+            if (_desatListBox != null && _desatListBox.Items.Count > 0)
+                _desatListBox.SelectedIndex = _desatListBox.Items.Count - 1;
+            Log(string.Format("Desaturate pick: sampled RGB({0},{1},{2}) from {3} (staying armed).",
+                sampled.R, sampled.G, sampled.B, source));
+            DesatBoom(sampled, _desatTargets.Count - 1);
+            // DesatBoom overwrites the status with the boom count; re-append
+            // the still-armed hint so the mode is discoverable.
+            try
+            {
+                if (_desatPickArmed && _desatStatusLabel != null)
+                    _desatStatusLabel.Text += " Click for more (Esc done).";
+            }
+            catch { }
+            return true;
+        }
+
+        private void DesatRemove_Click(object sender, EventArgs e)
+        {
+            int i = _desatListBox != null ? _desatListBox.SelectedIndex : -1;
+            if (i < 0 || i >= _desatTargets.Count) { Log("Desaturate: nothing selected to remove."); return; }
+            _desatTargets.RemoveAt(i);
+            DesatRefreshList();
+            if (_desatStatusLabel != null)
+                _desatStatusLabel.Text = string.Format("Removed target {0}. {1} left.", i + 1, _desatTargets.Count);
+            Log(string.Format("Desaturate: removed target {0} (list only, no recolor).", i + 1));
+        }
+
+        private void DesatClear_Click(object sender, EventArgs e)
+        {
+            _desatTargets.Clear();
+            DesatRefreshList();
+            if (_desatStatusLabel != null) _desatStatusLabel.Text = "Targets cleared.";
+            Log("Desaturate: target list cleared (no recolor).");
+        }
+
+        private void DesatRerun_Click(object sender, EventArgs e)
+        {
+            int i = _desatListBox != null ? _desatListBox.SelectedIndex : -1;
+            if (i < 0 || i >= _desatTargets.Count) { Log("Desaturate: pick a listed target to re-run."); return; }
+            DesatBoom(_desatTargets[i], i);
+        }
+
+        private void DesatRefreshList()
+        {
+            if (_desatListBox == null) return;
+            try
+            {
+                _desatListBox.BeginUpdate();
+                _desatListBox.Items.Clear();
+                for (int i = 0; i < _desatTargets.Count; i++)
+                {
+                    Color c = _desatTargets[i];
+                    _desatListBox.Items.Add(string.Format("{0}: {1},{2},{3}", i + 1, c.R, c.G, c.B));
+                }
+            }
+            finally
+            {
+                try { _desatListBox.EndUpdate(); }
+                catch { }
+            }
+        }
+
+        private void DesatList_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= _desatTargets.Count) return;
+            try
+            {
+                e.DrawBackground();
+                Color c = _desatTargets[e.Index];
+                using (var br = new SolidBrush(c))
+                    e.Graphics.FillRectangle(br, e.Bounds.X + 2, e.Bounds.Y + 2, 20, e.Bounds.Height - 4);
+                e.Graphics.DrawRectangle(Pens.Gray, e.Bounds.X + 2, e.Bounds.Y + 2, 20, e.Bounds.Height - 4);
+                string txt = string.Format("{0}: {1},{2},{3}", e.Index + 1, c.R, c.G, c.B);
+                using (var br = new SolidBrush(e.ForeColor))
+                    e.Graphics.DrawString(txt, e.Font, br, e.Bounds.X + 26, e.Bounds.Y + 1);
+                e.DrawFocusRectangle();
+            }
+            catch { }
+        }
+
+        #endregion
+
         private Mul.HuesReader _hues;
         private int _hueCount;
+        // Pre-hue original colors, captured on first UO-hue apply per model.
+        // Hue ID 0 restores from here, and every hue apply paints onto these
+        // originals (restore-then-hue) so hue 5 -> hue 9 == hue 9 fresh.
+        // Reuses the existing _editUndo stack for undo; this is only the
+        // pristine baseline. Invalid when the model instance or splat count
+        // changes (load / delete / clone / thin).
+        private PlySplatModel _uoHueBackupModel;
+        private byte[] _uoHueOrigR, _uoHueOrigG, _uoHueOrigB;
+
+        private bool UoHueBackupValid()
+        {
+            return _model != null && _uoHueBackupModel == _model
+                && _uoHueOrigR != null && _uoHueOrigG != null && _uoHueOrigB != null
+                && _uoHueOrigR.Length == _model.Count
+                && _uoHueOrigG.Length == _model.Count
+                && _uoHueOrigB.Length == _model.Count;
+        }
+
+        private void EnsureUoHueBackup()
+        {
+            if (_model == null) return;
+            if (UoHueBackupValid()) return;
+            int n = _model.Count;
+            var r = new byte[n];
+            var g = new byte[n];
+            var b = new byte[n];
+            var pts = _model.Points;
+            for (int i = 0; i < n; i++)
+            {
+                r[i] = pts[i].R;
+                g[i] = pts[i].G;
+                b[i] = pts[i].B;
+            }
+            _uoHueOrigR = r;
+            _uoHueOrigG = g;
+            _uoHueOrigB = b;
+            _uoHueBackupModel = _model;
+        }
+
+        private void RestoreUoHueOriginals(System.Collections.Generic.List<int> idx)
+        {
+            if (!UoHueBackupValid()) return;
+            var pts = _model.Points;
+            foreach (int i in idx)
+            {
+                if (i < 0 || i >= pts.Count) continue;
+                var p = pts[i];
+                p.R = _uoHueOrigR[i];
+                p.G = _uoHueOrigG[i];
+                p.B = _uoHueOrigB[i];
+                pts[i] = p;
+            }
+        }
 
         private Color[] UoHueTable(int hueId)
         {
@@ -1037,7 +1511,7 @@ namespace MeesaMultisMaker
                     _hueCount = 0;
                     for (int h = 1; h <= 3000; h++)
                         if (_hues.GetHueColors(h) != null) _hueCount++;
-                    _hueStatusLabel.Text = _hueCount + " hues loaded.";
+                    _hueStatusLabel.Text = _hueCount + " hues loaded. 0 restores original automatically.";
                 }
                 return _hues.GetHueColors(hueId);
             }
@@ -1158,16 +1632,40 @@ namespace MeesaMultisMaker
                 AfterEdit("Exploded " + n + " splats along normals.");
                 return;
             }
-            if (which == "uohue")
+            if (which == "uohue" || which == "uohue_revert")
             {
                 int id = _hueIdNum != null ? (int)_hueIdNum.Value : 1;
+                if (which == "uohue_revert") id = 0;
+                if (id <= 0)
+                {
+                    // Hue ID 0 (or Revert): restore pre-hue original colors.
+                    if (!UoHueBackupValid()) { Log("UO hue: already original colors."); return; }
+                    var ridx = SplatOps.Affected(_model, UseSel());
+                    if (ridx.Count == 0) { Log("Nothing to revert."); return; }
+                    PushMutateUndo(ridx);
+                    RestoreUoHueOriginals(ridx);
+                    try
+                    {
+                        _applyingHue = true;
+                        if (_hueIdNum != null && _hueIdNum.Value != 0)
+                            _hueIdNum.Value = 0;
+                    }
+                    finally { _applyingHue = false; }
+                    _hueStatusLabel.Text = "Original colors restored. 0 = original (auto).";
+                    AfterEdit("UO hue reverted: " + ridx.Count + " splats (" + Scope() + ").");
+                    return;
+                }
                 var table = UoHueTable(id);
                 if (table == null) { Log("UO hue: no table for id " + id + "."); return; }
                 var idx = SplatOps.Affected(_model, UseSel());
                 if (idx.Count == 0) { Log("Nothing to hue."); return; }
+                EnsureUoHueBackup();
                 PushMutateUndo(idx);
+                // Compose from the pristine baseline, never from stacked hues.
+                RestoreUoHueOriginals(idx);
                 bool partial = _huePartialChk != null && _huePartialChk.Checked;
                 n = SplatOps.ApplyUoHue(_model, UseSel(), table, partial);
+                _hueStatusLabel.Text = "Hue " + id + " applied. 0 or Revert restores original.";
                 AfterEdit("UO hue " + id + (partial ? " (partial)" : " (full)") + ": " + n + " splats.");
                 return;
             }
@@ -1303,8 +1801,10 @@ namespace MeesaMultisMaker
             try
             {
                 // 1. Render the current view (uncropped, opaque) for masking.
+                // SAM needs full-quality input: bypass the UO Style look
+                // (pixelize/banding) even when the viewer toggle is ON.
                 Bitmap view = RenderComposedModel(_model, 512, 512, _yaw, (float)pitchNumeric.Value,
-                    zoomTrackBar.Value / 100f, DotScale(), false, 0, true, Color.Empty, UoMode(), 0f);
+                    zoomTrackBar.Value / 100f, DotScale(), false, 0, true, Color.Empty, UoMode(), 0f, skipUoStyle: true);
                 Bitmap flat = Flatten(view, Color.Black);
                 view.Dispose();
                 byte[] png;
@@ -1325,12 +1825,27 @@ namespace MeesaMultisMaker
                     Log("AI select: no SAM model loader on this server (checked SAMLoader, Sam2Loader, GroundingDinoModelLoader). " +
                         "Install a SAM pack (e.g. comfyui_segment_anything) to enable one-click AI select, " +
                         "or paint a mask in any image editor and use Load mask.");
-                    MessageBox.Show(this,
+                    var dr = MessageBox.Show(this,
                         "No SAM model loader found on the ComfyUI server.\n\n" +
-                        "To enable AI Select, install a SAM pack (e.g. comfyui_segment_anything) on the server.\n\n" +
-                        "Meanwhile, 'Load mask' works today: paint white where you want selected, load it, done.",
-                        "3D Editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
+                        "Install it now? This downloads the comfyui_segment_anything node pack " +
+                        "and the SAM ViT-B weights (~375 MB), then asks you to restart ComfyUI.\n\n" +
+                        "Yes = install now. No = keep using 'Load mask' (paint white where you want selected, load it, done).",
+                        "3D Editor", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (dr != DialogResult.Yes) return;
+                    var installed = await InstallSamPackCoreAsync();
+                    if (installed == null || !installed.Success) return;
+                    _samStatusLabel.Text = "Probing SAM…";
+                    loader = await ProbeSamLoader();
+                    if (loader == null)
+                    {
+                        _samStatusLabel.Text = "Restart needed.";
+                        Log("SAM files are installed but the loader is not visible yet. Restart the ComfyUI server, then press AI Select again.");
+                        MessageBox.Show(this,
+                            "Files are installed, but the running server has not picked them up yet.\n\n" +
+                            "Restart ComfyUI, then press AI Select (SAM) again.",
+                            "3D Editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
                 }
                 _samStatusLabel.Text = "Found " + loader + ".";
                 Log("AI select: found loader " + loader + " - full auto-wire needs its checkpoint name. " +
@@ -1347,6 +1862,131 @@ namespace MeesaMultisMaker
                 _samStatusLabel.Text = "AI select failed.";
                 Log("AI select failed: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// "Install SAM" button: runs the one-click installer with no model
+        /// required. Re-probes afterwards and reports Ready / Restart needed.
+        /// </summary>
+        private async Task InstallSamPackAsync()
+        {
+            var res = await InstallSamPackCoreAsync();
+            if (res == null || !res.Success) return;
+            string loader = await ProbeSamLoader();
+            if (loader != null)
+            {
+                _samStatusLabel.Text = "Ready.";
+                Log("SAM install: found '" + loader + "' - AI Select is ready.");
+                MessageBox.Show(this,
+                    "SAM is ready (found '" + loader + "').\n\nPress AI Select (SAM) to use it.",
+                    "3D Editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                _samStatusLabel.Text = "Restart needed.";
+                Log("SAM files are installed but the loader is not visible yet. Restart the ComfyUI server, then press AI Select again.");
+                MessageBox.Show(this,
+                    "Files are installed, but the running server has not picked them up yet.\n\n" +
+                    "Restart ComfyUI, then press AI Select (SAM) again.",
+                    "3D Editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        /// <summary>
+        /// Shared install core: runs ComfySamInstaller with status-label
+        /// progress, then a short grace re-probe in case the server picked
+        /// the new nodes up without a restart. Returns null when cancelled
+        /// or on terminal failure (dialog already shown); success UI is the
+        /// caller's job (button vs AI-Select flows differ).
+        /// </summary>
+        private async Task<SamInstallResult> InstallSamPackCoreAsync()
+        {
+            if (_samInstallCts != null)
+            {
+                Log("SAM install already running.");
+                return null;
+            }
+            string baseUrl = comfyUrlTextBox.Text.Trim().TrimEnd('/');
+            var cts = new CancellationTokenSource();
+            _samInstallCts = cts;
+            try
+            {
+                SetSamBusy(true);
+                var prog = new Progress<SamInstallProgress>(p =>
+                {
+                    try { _samStatusLabel.Text = p.Message; }
+                    catch { }
+                });
+                SamInstallResult res = await ComfySamInstaller.InstallAsync(baseUrl, prog, cts.Token);
+                if (res == null || !res.Success)
+                {
+                    _samStatusLabel.Text = "Install failed.";
+                    string details = (res == null || string.IsNullOrEmpty(res.Details))
+                        ? ComfySamInstaller.ManualStepsText(!ComfySamInstaller.IsLocalServer(baseUrl))
+                        : res.Details;
+                    Log("SAM install failed: " + details);
+                    MessageBox.Show(this,
+                        "SAM auto-install could not finish:\n\n" + details,
+                        "3D Editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return null;
+                }
+                if (!res.LoaderDetected)
+                {
+                    // Grace window: a restart may already be in flight.
+                    _samStatusLabel.Text = "Probing SAM…";
+                    try
+                    {
+                        using (var grace = new CancellationTokenSource(20000))
+                        using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, grace.Token))
+                        {
+                            string late = await ComfySamInstaller.WaitForLoaderAsync(baseUrl, 20000, prog, linked.Token);
+                            if (late != null) res.LoaderDetected = true;
+                        }
+                    }
+                    catch { }
+                    if (!res.LoaderDetected) res.RestartRequired = true;
+                    else _samStatusLabel.Text = "Ready.";
+                }
+                else
+                {
+                    _samStatusLabel.Text = "Ready.";
+                }
+                Log("SAM install: " + res.Details);
+                return res;
+            }
+            catch (OperationCanceledException)
+            {
+                _samStatusLabel.Text = "Install cancelled.";
+                Log("SAM install cancelled.");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _samStatusLabel.Text = "Install failed.";
+                Log("SAM install failed: " + ex.Message);
+                MessageBox.Show(this,
+                    "SAM auto-install failed:\n\n" + ex.Message + "\n\n" +
+                    ComfySamInstaller.ManualStepsText(ComfySamInstaller.IsLocalServer(baseUrl) == false),
+                    "3D Editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
+            finally
+            {
+                _samInstallCts = null;
+                try { cts.Dispose(); }
+                catch { }
+                SetSamBusy(false);
+            }
+        }
+
+        private void SetSamBusy(bool busy)
+        {
+            try
+            {
+                if (_samAiBtn != null) _samAiBtn.Enabled = !busy;
+                if (_samInstallBtn != null) _samInstallBtn.Enabled = !busy;
+            }
+            catch { }
         }
 
         private void MaskImport_Click(object sender, EventArgs e)

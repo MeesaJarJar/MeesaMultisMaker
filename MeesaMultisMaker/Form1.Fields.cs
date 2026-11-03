@@ -83,6 +83,19 @@ namespace MeesaMultisMaker
         private Point marqueeStart;
         private Rectangle marqueeRect;
 
+        // Lasso selection (free-path alternative to rectangle marquee, ported
+        // from MapViewerForm.TileSelection.cs StartLassoSelection/AddLassoPoint/
+        // CompleteLassoSelection with GraphicsPath.AddPolygon + IsVisible).
+        // Bindings: Ctrl+Shift+Left-drag = lasso select,
+        // Alt+Shift+Left-drag = lasso deselect (Alt wins, mirrors Alt rect).
+        private bool isLassoSelecting = false;
+        private bool lassoDeselect = false;
+        private readonly List<Point> lassoPoints = new List<Point>();
+        private bool isPotentialLasso = false; // press seen, waiting for drag threshold
+        private Point potentialLassoStart;
+        private bool potentialLassoDeselect = false;
+        private const int LASSO_DRAG_THRESHOLD = 5; // px, mirrors MapViewer
+
         // Clipboard for copy/paste
         private List<PlacedObject> clipboardObjects = null;
 

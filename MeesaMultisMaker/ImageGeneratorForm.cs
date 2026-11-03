@@ -289,7 +289,7 @@ namespace MeesaMultisMaker
             {
                 Width = 70,
                 Minimum = 256,
-                Maximum = 2048,
+                Maximum = 4096,
                 Value = 1024,
                 Increment = 64
             };
@@ -308,7 +308,7 @@ namespace MeesaMultisMaker
             {
                 Width = 70,
                 Minimum = 256,
-                Maximum = 2048,
+                Maximum = 4096,
                 Value = 1024,
                 Increment = 64
             };
@@ -543,7 +543,7 @@ namespace MeesaMultisMaker
                 Location = new Point(100, 50),
                 Width = 70,
                 Minimum = 64,
-                Maximum = 2048,
+                Maximum = 4096,
                 Value = 512,
                 Increment = 64
             };
@@ -563,7 +563,7 @@ namespace MeesaMultisMaker
                 Location = new Point(210, 50),
                 Width = 70,
                 Minimum = 64,
-                Maximum = 2048,
+                Maximum = 4096,
                 Value = 512,
                 Increment = 64
             };

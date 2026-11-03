@@ -172,7 +172,6 @@ namespace MeesaMultisMaker
         private CheckBox repromptSfxChk, repromptMusicChk;
         private CheckBox autoQueueSfxChk, autoQueueMusicChk;
         private TextBox langVoiceBox;
-        private TextBox workflowSfxBox, workflowMusicBox, workflowVoiceBox;
         private TextBox comfyUrlTextBox;
         private Button generateButton, cancelButton;
         private Button[] modeBtns = new Button[5];
@@ -420,13 +419,13 @@ namespace MeesaMultisMaker
             modeSfxPanel = BuildGenPanel(left, y, "Sound effect prompt:",
                 "sword swing whoosh, clean metallic tone. Length: 2 seconds",
                 out promptSfxBox, out negSfxBox, "muffled, distorted, clipping, echo, low quality",
-                out durSfxNum, out seedSfxNum, out stepsSfxNum, out workflowSfxBox,
-                out repromptSfxChk, out autoQueueSfxChk, AudioWorkflow.DefaultSfxWorkflowPath(), 5, true);
+                out durSfxNum, out seedSfxNum, out stepsSfxNum,
+                out repromptSfxChk, out autoQueueSfxChk, 5, true);
             modeMusicPanel = BuildGenPanel(left, y, "Music prompt:",
                 "dark ambient dungeon loop, low drones, sparse percussion. Length: 30 seconds",
                 out promptMusicBox, out negMusicBox, "vocals, lyrics, talking, abrupt ending, low quality",
-                out durMusicNum, out seedMusicNum, out stepsMusicNum, out workflowMusicBox,
-                out repromptMusicChk, out autoQueueMusicChk, AudioWorkflow.DefaultMusicWorkflowPath(), 30, true);
+                out durMusicNum, out seedMusicNum, out stepsMusicNum,
+                out repromptMusicChk, out autoQueueMusicChk, 30, true);
             modeVoicePanel = BuildVoicePanel(left, y);
             modeWatcherPanel = BuildWatcherPanel(left, y);
             modeLibraryPanel = BuildLibraryPanel(left, y);
@@ -693,10 +692,10 @@ namespace MeesaMultisMaker
         private Panel BuildGenPanel(Panel left, int y, string promptTitle, string promptDefault,
             out TextBox promptBox, out TextBox negBox, string negDefault,
             out NumericUpDown durNum, out NumericUpDown seedNum,
-            out NumericUpDown stepsNum, out TextBox workflowBox, out CheckBox repromptChk,
-            out CheckBox autoQueueChk, string workflowDefault, int durDefault, bool showSteps)
+            out NumericUpDown stepsNum, out CheckBox repromptChk,
+            out CheckBox autoQueueChk, int durDefault, bool showSteps)
         {
-            var p = new Panel { Location = new Point(0, y), Width = 340, Height = 322 };
+            var p = new Panel { Location = new Point(0, y), Width = 340, Height = 284 };
             left.Controls.Add(p);
             int ly = 0;
             p.Controls.Add(MakeLabel(promptTitle, 10, ly, 320, 16));
@@ -719,7 +718,7 @@ namespace MeesaMultisMaker
             try
             {
                 var negTip = new ToolTip { ShowAlways = true };
-                negTip.SetToolTip(negBox, "Written into the template's negative text encoder (empty = off). Same box feeds manual, radio, and watcher runs for this kind.");
+                negTip.SetToolTip(negBox, "Written into the built-in graph's negative text encoder (empty = off). Same box feeds manual, radio, and watcher runs for this kind.");
             }
             catch { }
             ly += 40;
@@ -757,7 +756,7 @@ namespace MeesaMultisMaker
                 try
                 {
                     var tip = new ToolTip { ShowAlways = true };
-                    tip.SetToolTip(repromptChk, "OFF (default): your prompt is used directly; the reprompt LLM branch is cut so it cannot fail the run. ON: the workflow's LLM rewrites the prompt first (requires its Qwen weights to load cleanly).");
+                    tip.SetToolTip(repromptChk, "OFF (default): your prompt is used directly; the reprompt LLM branch is cut so it cannot fail the run. ON: the built-in graph's LLM rewrites the prompt first (requires its Qwen weights to load cleanly).");
                 }
                 catch { }
                 ly += 26;
@@ -782,31 +781,12 @@ namespace MeesaMultisMaker
                 repromptChk = null;
                 autoQueueChk = null;
             }
-            p.Controls.Add(MakeLabel("Workflow:", 10, ly, 320, 16));
-            ly += 18;
-            TextBox wfBox = new TextBox { Location = new Point(10, ly), Width = 256, Height = 20, Text = workflowDefault };
-            workflowBox = wfBox;
-            p.Controls.Add(wfBox);
-            var browse = new Button { Location = new Point(272, ly - 1), Width = 58, Height = 23, Text = "..." };
-            browse.Click += delegate
-            {
-                using (var dlg = new OpenFileDialog())
-                {
-                    dlg.Filter = "ComfyUI workflow (*.json)|*.json";
-                    dlg.FileName = wfBox.Text;
-                    if (dlg.ShowDialog(this) == DialogResult.OK)
-                        wfBox.Text = dlg.FileName;
-                }
-            };
-            p.Controls.Add(browse);
             return p;
         }
 
         private Button _voiceCloneBtn, _voiceDesignBtn;
         private Panel _voiceCloneBox, _voiceDesignBox;
         private TextBox _voiceInstructBox;
-        private Label _voiceWfLabel;
-        private Button _voiceWfBrowse;
         private int _voiceMode; // 0 clone, 1 design
 
         private void SetVoiceMode(int m)
@@ -816,9 +796,6 @@ namespace MeesaMultisMaker
             {
                 if (_voiceCloneBox != null) _voiceCloneBox.Visible = m == 0;
                 if (_voiceDesignBox != null) _voiceDesignBox.Visible = m == 1;
-                if (workflowVoiceBox != null) workflowVoiceBox.Visible = m == 0;
-                if (_voiceWfLabel != null) _voiceWfLabel.Visible = m == 0;
-                if (_voiceWfBrowse != null) _voiceWfBrowse.Visible = m == 0;
                 foreach (var pair in new Button[] { _voiceCloneBtn, _voiceDesignBtn })
                 {
                     if (pair == null) continue;
@@ -852,7 +829,7 @@ namespace MeesaMultisMaker
 
         private Panel BuildVoicePanel(Panel left, int y)
         {
-            var p = new Panel { Location = new Point(0, y), Width = 340, Height = 322 };
+            var p = new Panel { Location = new Point(0, y), Width = 340, Height = 284 };
             left.Controls.Add(p);
             int ly = 0;
             _voiceCloneBtn = new Button { Location = new Point(10, ly), Width = 158, Height = 24, Text = "Clone a voice" };
@@ -918,24 +895,6 @@ namespace MeesaMultisMaker
             p.Controls.Add(langVoiceBox);
             ly += 28;
             SetVoiceMode(0);
-            _voiceWfLabel = MakeLabel("Workflow (clone only):", 10, ly, 320, 16);
-            p.Controls.Add(_voiceWfLabel);
-            ly += 18;
-            workflowVoiceBox = new TextBox { Location = new Point(10, ly), Width = 256, Height = 20, Text = AudioWorkflow.DefaultTtsWorkflowPath() };
-            p.Controls.Add(workflowVoiceBox);
-            var browse = new Button { Location = new Point(272, ly - 1), Width = 58, Height = 23, Text = "..." };
-            _voiceWfBrowse = browse;
-            browse.Click += delegate
-            {
-                using (var dlg = new OpenFileDialog())
-                {
-                    dlg.Filter = "ComfyUI workflow (*.json)|*.json";
-                    dlg.FileName = workflowVoiceBox.Text;
-                    if (dlg.ShowDialog(this) == DialogResult.OK)
-                        workflowVoiceBox.Text = dlg.FileName;
-                }
-            };
-            p.Controls.Add(browse);
             return p;
         }
 
@@ -2266,7 +2225,7 @@ namespace MeesaMultisMaker
         }
 
         private int _runMode;
-        private string _runPrompt, _runWorkflow, _runLang, _runRefLocal, _runInstruct, _runNegative;
+        private string _runPrompt, _runLang, _runRefLocal, _runInstruct, _runNegative;
         private int _runVoiceMode;
 
         // Radio (AutoQueue) state: while the mode checkbox is on, finished
@@ -2318,7 +2277,6 @@ namespace MeesaMultisMaker
                     _runPrompt = promptSfxBox.Text.Trim();
                     if (_runPrompt.Length == 0) throw new Exception("Enter a prompt first.");
                     _runNegative = negSfxBox != null ? negSfxBox.Text.Trim() : string.Empty;
-                    _runWorkflow = workflowSfxBox.Text;
                     _runDuration = (double)durSfxNum.Value;
                     _runSeed = (long)seedSfxNum.Value;
                     _runSteps = (int)stepsSfxNum.Value;
@@ -2329,7 +2287,6 @@ namespace MeesaMultisMaker
                     _runPrompt = promptMusicBox.Text.Trim();
                     if (_runPrompt.Length == 0) throw new Exception("Enter a prompt first.");
                     _runNegative = negMusicBox != null ? negMusicBox.Text.Trim() : string.Empty;
-                    _runWorkflow = workflowMusicBox.Text;
                     _runDuration = (double)durMusicNum.Value;
                     _runSeed = (long)seedMusicNum.Value;
                     _runSteps = (int)stepsMusicNum.Value;
@@ -2345,12 +2302,10 @@ namespace MeesaMultisMaker
                     {
                         _runInstruct = _voiceInstructBox != null ? _voiceInstructBox.Text.Trim() : string.Empty;
                         if (_runInstruct.Length == 0) throw new Exception("Describe the voice first.");
-                        _runWorkflow = string.Empty;
                         _runRefLocal = null;
                     }
                     else
                     {
-                        _runWorkflow = workflowVoiceBox.Text;
                         _runInstruct = string.Empty;
                         _runRefLocal = !string.IsNullOrEmpty(_refVoicePath) && File.Exists(_refVoicePath)
                             ? _refVoicePath : null;
@@ -2359,11 +2314,6 @@ namespace MeesaMultisMaker
                     _runLang = langVoiceBox.Text.Trim();
                     _runSteps = 0;
                     _runDuration = 0;
-                }
-                if (_runMode != 2 || _runVoiceMode == 0)
-                {
-                    if (string.IsNullOrEmpty(_runWorkflow) || !File.Exists(_runWorkflow))
-                        throw new Exception("Workflow file not found:\r\n" + _runWorkflow);
                 }
                 try { AppConfig.Instance.ComfyUIUrl = comfyUrlTextBox.Text.Trim(); }
                 catch { }
@@ -2521,13 +2471,14 @@ namespace MeesaMultisMaker
                     {
                         Log("No reference voice set: using the template default.");
                     }
-                    built = AudioWorkflow.BuildVoiceClone(_runWorkflow, _runPrompt,
+                    built = AudioWorkflow.BuildVoiceClone(_runPrompt,
                         _runSeed, refServer, _runLang);
                 }
                 else
                 {
-                    built = AudioWorkflow.BuildTextToAudio(_runWorkflow, _runPrompt,
-                        _runDuration, _runSeed, _runSteps, _runReprompt, null, _runNegative);
+                    string category = _runMode == 0 ? "SFX" : "Music";
+                    built = AudioWorkflow.BuildTextToAudio(_runPrompt,
+                        _runDuration, _runSeed, _runSteps, _runReprompt, category, _runNegative);
                 }
                 Log(kind + " graph (" + built.FormatNote + "), seed=" + built.Seed + ".");
                 string promptJson = built.PromptJson;
@@ -2710,7 +2661,7 @@ namespace MeesaMultisMaker
                                 Kind = kind,
                                 Prompt = _runPrompt,
                                 Seed = built.Seed,
-                                Workflow = _runWorkflow,
+                                Workflow = string.Empty,
                                 AudioPath = finalAdd,
                                 DurationSec = clipDuration(finalAdd),
                                 Scene = string.Empty,

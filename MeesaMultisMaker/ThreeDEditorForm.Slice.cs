@@ -741,6 +741,10 @@ namespace MeesaMultisMaker
                 }
                 finally { layer.Dispose(); }
             }
+            // Honor the UO Style viewer/export toggle like main exports do.
+            // MaybeApplyUoStyle disposes bmp on success and returns the
+            // styled bitmap; on failure it returns bmp untouched.
+            bmp = MaybeApplyUoStyle(bmp);
             // Tighten to content, but keep the tile-center pixel at the
             // image center: the canvas centers each sprite on its tile, so
             // a plain bbox crop would recenter shifted content and break

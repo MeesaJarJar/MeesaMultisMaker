@@ -190,6 +190,68 @@ namespace MeesaMultisMaker.ThreeD
         }
 
         /// <summary>
+        /// Select-by-color desaturate (mirrors 2D PARTIAL HUE PREP semantics):
+        /// a splat matches when its Manhattan RGB distance to
+        /// <paramref name="target"/> is &lt;= <paramref name="tolerance"/>.
+        /// Already exact-gray splats (R==G==B) are never matched, so a later
+        /// target at any tolerance cannot shift grays produced by an earlier
+        /// boom. Match cost is O(n); callers snapshot the returned indices
+        /// with PushMutateUndo before applying, so each boom is one undo step.
+        /// Respects the standard selection convention: null sel = whole model,
+        /// else only selected rows are scanned. Selection itself is untouched.
+        /// </summary>
+        public static List<int> CollectDesaturateMatches(PlySplatModel model, bool[] sel, Color target, int tolerance)
+        {
+            var out_ = new List<int>();
+            if (model == null || model.Points == null) return out_;
+            if (tolerance < 0) tolerance = 0;
+            var pts = model.Points;
+            int n = model.Count;
+            byte tr = target.R, tg = target.G, tb = target.B;
+            bool hasSel = sel != null;
+            for (int i = 0; i < n; i++)
+            {
+                if (hasSel)
+                {
+                    if (i >= sel.Length || !sel[i]) continue;
+                }
+                var p = pts[i];
+                if (p.R == p.G && p.G == p.B) continue;
+                int dist = Math.Abs((int)p.R - (int)tr)
+                         + Math.Abs((int)p.G - (int)tg)
+                         + Math.Abs((int)p.B - (int)tb);
+                if (dist <= tolerance) out_.Add(i);
+            }
+            return out_;
+        }
+
+        /// <summary>
+        /// Desaturate pre-collected indices to luminance gray
+        /// (R=G=B=lum, 0.299R+0.587G+0.114B, rounded). No selection or color
+        /// test here; the caller filtered via CollectDesaturateMatches.
+        /// Returns the number of splats actually rewritten.
+        /// </summary>
+        public static int DesaturateIndices(PlySplatModel model, List<int> idx)
+        {
+            if (model == null || model.Points == null) return 0;
+            if (idx == null || idx.Count == 0) return 0;
+            var pts = model.Points;
+            int n = 0;
+            foreach (int i in idx)
+            {
+                if (i < 0 || i >= pts.Count) continue;
+                var p = pts[i];
+                int lum = (int)(0.299 * p.R + 0.587 * p.G + 0.114 * p.B + 0.5);
+                if (lum < 0) lum = 0;
+                if (lum > 255) lum = 255;
+                p.R = p.G = p.B = (byte)lum;
+                pts[i] = p;
+                n++;
+            }
+            return n;
+        }
+
+        /// <summary>
         /// Pull dark edge splats toward their brightest nearby neighbor.
         /// Kills black-background fringes from renders.
         /// </summary>

@@ -103,6 +103,13 @@ namespace MeesaMultisMaker
         {
             try
             {
+                if (e.KeyCode == Keys.Escape && _desatPickArmed)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    DesatDisarm("Pick cancelled.");
+                    return;
+                }
                 if (e.Control && e.KeyCode == Keys.Z && !e.Shift)
                 {
                     // Never steal text-box undo (prompt box, numbers, LLM

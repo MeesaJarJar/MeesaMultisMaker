@@ -144,8 +144,8 @@ namespace MeesaMultisMaker
                 Top = y,
                 Width = 60,
                 Minimum = 1,
-                Maximum = 50,
-                Value = defaultSize.Width,
+                Maximum = 1000,
+                Value = Math.Min(1000, Math.Max(1, defaultSize.Width)),
                 Enabled = false
             };
             this.Controls.Add(widthNumeric);
@@ -159,8 +159,8 @@ namespace MeesaMultisMaker
                 Top = y,
                 Width = 60,
                 Minimum = 1,
-                Maximum = 50,
-                Value = defaultSize.Height,
+                Maximum = 1000,
+                Value = Math.Min(1000, Math.Max(1, defaultSize.Height)),
                 Enabled = false
             };
             this.Controls.Add(heightNumeric);

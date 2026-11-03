@@ -40,7 +40,6 @@ namespace MeesaMultisMaker
         private TextBox seedTextBox;
         private NumericUpDown stepsNumeric;
         private NumericUpDown fluxStepsNumeric;
-        private TextBox workflowPathTextBox;
         private TextBox comfyUrlTextBox;
         private TextBox initImageTextBox;
         private Button generateButton;
@@ -127,6 +126,7 @@ namespace MeesaMultisMaker
         private Bitmap _viewBitmap;
         private float _yaw = 45f; // reset to FacingYaw(N) in constructor
         private int _direction = 0;
+        private bool _uoStyleViewer = false;
         private Color _bgColor = Color.FromArgb(24, 24, 32);
         private ComfyUIClient _comfy;
         private CancellationTokenSource _cts;
@@ -180,7 +180,6 @@ namespace MeesaMultisMaker
             var tips = new ToolTip { ShowAlways = true };
             try
             {
-                tips.SetToolTip(workflowPathTextBox, workflowPathTextBox.Text);
                 tips.SetToolTip(initImageTextBox, initImageTextBox.Text);
                 tips.SetToolTip(viewport, "Drag to orbit. Direction buttons snap to the 8 UO facings.");
             }
@@ -356,15 +355,6 @@ namespace MeesaMultisMaker
             var testBtn = new Button { Location = new Point(266, y - 1), Width = 64, Height = 23, Text = "Test" };
             testBtn.Click += TestBtn_Click;
             left.Controls.Add(testBtn);
-            y += 30;
-
-            left.Controls.Add(MakeLabel("Workflow (MultisMaker1.json):", 10, y, 320, 16));
-            y += 18;
-            workflowPathTextBox = new TextBox { Location = new Point(10, y), Width = 250, Height = 20, Text = MultisMaker1Workflow.DefaultWorkflowPath };
-            left.Controls.Add(workflowPathTextBox);
-            var browseWf = new Button { Location = new Point(266, y - 1), Width = 64, Height = 23, Text = "..." };
-            browseWf.Click += BrowseWf_Click;
-            left.Controls.Add(browseWf);
             y += 30;
 
             left.Controls.Add(MakeLabel("Init image (optional):", 10, y, 320, 16));
@@ -588,7 +578,7 @@ namespace MeesaMultisMaker
 
             bottom.Controls.Add(MakeLabel("Export size:", 6, by + 4, 70, 16));
             resolutionComboBox = new ComboBox { Location = new Point(80, by), Width = 90, Height = 21, DropDownStyle = ComboBoxStyle.DropDownList };
-            resolutionComboBox.Items.AddRange(new object[] { "256", "512", "1024", "2048" });
+            resolutionComboBox.Items.AddRange(new object[] { "256", "512", "1024", "2048", "4096" });
             resolutionComboBox.SelectedIndex = 1;
             bottom.Controls.Add(resolutionComboBox);
 
@@ -746,17 +736,6 @@ namespace MeesaMultisMaker
             catch (Exception ex) { SetStatus("Error: " + ex.Message, Color.Red); }
         }
 
-        private void BrowseWf_Click(object sender, EventArgs e)
-        {
-            using (var dlg = new OpenFileDialog())
-            {
-                dlg.Filter = "ComfyUI workflow (*.json)|*.json";
-                dlg.FileName = workflowPathTextBox.Text;
-                if (dlg.ShowDialog(this) == DialogResult.OK)
-                    workflowPathTextBox.Text = dlg.FileName;
-            }
-        }
-
         /// <summary>
         /// Ctrl+V into the init box: image bitmaps (screenshots, browser
         /// copies, Painter) and copied image files both land as the init
@@ -874,11 +853,6 @@ namespace MeesaMultisMaker
             _chainNeedsLoop = false;
             string prompt = promptTextBox.Text.Trim();
             if (prompt.Length == 0) { MessageBox.Show(this, "Enter a prompt first.", "3D Editor"); return; }
-            if (!File.Exists(workflowPathTextBox.Text))
-            {
-                MessageBox.Show(this, "Workflow file not found:\r\n" + workflowPathTextBox.Text, "3D Editor");
-                return;
-            }
             long seed;
             if (!long.TryParse(seedTextBox.Text.Trim(), out seed)) seed = -1;
             int steps = stepsNumeric != null ? Math.Max(1, (int)stepsNumeric.Value) : 20;
@@ -1023,13 +997,6 @@ namespace MeesaMultisMaker
             if (_cts != null) { _chain3D = false; _chainNeedsLoop = false; return; } // already running
             string prompt = promptTextBox.Text.Trim();
             if (prompt.Length == 0) { _chain3D = false; _chainNeedsLoop = false; MessageBox.Show(this, "Enter a prompt first.", "3D Editor"); return; }
-            if (!File.Exists(workflowPathTextBox.Text))
-            {
-                _chain3D = false;
-                _chainNeedsLoop = false;
-                MessageBox.Show(this, "Workflow file not found:\r\n" + workflowPathTextBox.Text, "3D Editor");
-                return;
-            }
             long seed;
             if (!long.TryParse(seedTextBox.Text.Trim(), out seed)) seed = -1;
             int fluxSteps = fluxStepsNumeric != null ? Math.Max(1, Math.Min(12, (int)fluxStepsNumeric.Value)) : 4;
@@ -1060,16 +1027,8 @@ namespace MeesaMultisMaker
 
                 SetStatus("Building flux-only workflow...", HolographicTheme.BlueAccent);
                 MultisMaker1Workflow.BuildResult built;
-                try
-                {
-                    built = MultisMaker1Workflow.Build(workflowPathTextBox.Text, prompt, seed, initServer, 20, fluxSteps, true);
-                    Log("Flux-only graph (" + built.FormatNote + "), seed=" + built.Seed + ".");
-                }
-                catch
-                {
-                    Log("Workflow file: " + workflowPathTextBox.Text);
-                    throw;
-                }
+                built = MultisMaker1Workflow.BuildBuiltIn(prompt, seed, initServer, 20, fluxSteps, true);
+                Log("Flux-only graph (" + built.FormatNote + "), seed=" + built.Seed + ".");
 
                 SetStatus("Queueing on ComfyUI...", HolographicTheme.BlueAccent);
                 string promptId = await _comfy.QueuePrompt(built.PromptJson, Guid.NewGuid().ToString());
@@ -1191,18 +1150,10 @@ namespace MeesaMultisMaker
 
                 SetStatus("Building workflow...", HolographicTheme.BlueAccent);
                 MultisMaker1Workflow.BuildResult built;
-                try
-                {
-                    // No-flux 3D: the staged init image feeds Tripo directly.
-                    // The 2D stage lives on "Generate Init Image" now.
-                    built = MultisMaker1Workflow.Build(workflowPathTextBox.Text, prompt, seed, initServer, steps, fluxSteps, false, true);
-                    Log("KSampler steps=" + steps + " (Flux stage skipped; init feeds Tripo directly).");
-                }
-                catch
-                {
-                    Log("Workflow file: " + workflowPathTextBox.Text);
-                    throw;
-                }
+                // No-flux 3D: the staged init image feeds Tripo directly.
+                // The 2D stage lives on "Generate Init Image" now.
+                built = MultisMaker1Workflow.BuildBuiltIn(prompt, seed, initServer, steps, fluxSteps, false, true);
+                Log("KSampler steps=" + steps + " (Flux stage skipped; init feeds Tripo directly).");
                 Log("Workflow " + built.FormatNote + ": prompt JSON " + built.PromptJson.Length + " chars, seed=" + built.Seed + ".");
                 // Never overwrite the seed box: a "-1" there must stay "-1"
                 // so the next run randomizes again. The used seed is in the
@@ -1816,6 +1767,16 @@ namespace MeesaMultisMaker
 
         private void Viewport_MouseDown(object sender, MouseEventArgs e)
         {
+            // Desaturate eyedropper takes precedence over orbit/lasso/edit:
+            // a left click samples instead of navigating. Misses stay armed.
+            if (_desatPickArmed && e.Button == MouseButtons.Left)
+            {
+                try { DesatPickSample(e.Location); }
+                catch { }
+                try { viewport.Capture = false; }
+                catch { }
+                return;
+            }
             if (e.Button == MouseButtons.Middle && _model != null && _model.Count > 0)
             {
                 _panning = true;
@@ -1988,12 +1949,15 @@ namespace MeesaMultisMaker
 
         private void Viewport_MouseUp(object sender, MouseEventArgs e)
         {
+            // Eyedropper consumed the press; swallow the release too so no
+            // orbit/edit/lasso end-of-stroke runs.
+            if (_desatPickArmed && e.Button == MouseButtons.Left) return;
             if (_panning)
             {
                 _panning = false;
                 try { viewport.Capture = false; }
                 catch { }
-                try { viewport.Cursor = Cursors.Default; }
+                try { viewport.Cursor = _desatPickArmed ? Cursors.Cross : Cursors.Default; }
                 catch { }
                 try
                 {
@@ -2159,7 +2123,7 @@ namespace MeesaMultisMaker
         }
 
         private Bitmap RenderComposedModel(PlySplatModel model, int w, int h, float yaw, float pitch, float zoom,
-            float dots, bool transparent, int cap, bool hq, Color gridColor, bool uo, float gridYaw)
+            float dots, bool transparent, int cap, bool hq, Color gridColor, bool uo, float gridYaw, bool skipUoStyle = false)
         {
             float rx, ry, rz;
             // Isolated tile models are pre-baked: render with identity.
@@ -2188,14 +2152,42 @@ namespace MeesaMultisMaker
             }
             Bitmap bmp = SplatRenderer.Render(model, yaw, pitch, w, h, zoom, dots, transparent,
                 _bgColor, cap, hq, gridColor, uo, gridYaw, layer != null, rx, ry, rz, sx, sy, sz);
-            if (layer == null) return bmp;
+            if (layer == null) return skipUoStyle ? bmp : MaybeApplyUoStyle(bmp);
             try
             {
                 using (var g = Graphics.FromImage(bmp))
                     g.DrawImage(layer, 0, 0, w, h);
             }
             finally { layer.Dispose(); }
-            return bmp;
+            return skipUoStyle ? bmp : MaybeApplyUoStyle(bmp);
+        }
+
+        /// <summary>
+        /// Applies the UO-style viewer/export look when the toggle is ON.
+        /// Central choke point: RenderView (viewport.Image/_viewBitmap),
+        /// RenderExport, ExportAll 8-facings loop, SendToCanvas and
+        /// UseAsInput all funnel through RenderComposedModel, so viewer
+        /// AND export both get the look with no double-apply. Returns the
+        /// input bitmap untouched when OFF or on failure. UI-thread safe
+        /// (no control access; bool flag read only). Disposes the input
+        /// on success to avoid leaks.
+        /// </summary>
+        private Bitmap MaybeApplyUoStyle(Bitmap bmp)
+        {
+            if (!_uoStyleViewer || bmp == null) return bmp;
+            Bitmap styled = null;
+            try
+            {
+                styled = MeesaMultisMaker.Utils.ImageEffects.ApplyUoStyle(bmp);
+                bmp.Dispose();
+                return styled;
+            }
+            catch (Exception ex)
+            {
+                try { if (styled != null) styled.Dispose(); } catch { }
+                try { Log("UO Style failed: " + ex.Message); } catch { }
+                return bmp;
+            }
         }
 
         private Bitmap RenderExport(float yawDeg)

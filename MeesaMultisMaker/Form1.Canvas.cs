@@ -276,6 +276,21 @@ namespace MeesaMultisMaker
                 }
                 catch { }
 
+                // Z-Band split preview tint (dialog live preview): translucent
+                // part-color fill + border over the object's axis-aligned draw
+                // rect. Paint-time only; never mutates PlacedObject art.
+                try
+                {
+                    if (zBandPreviewColors != null && zBandPreviewColors.TryGetValue(obj, out Color zBandTint))
+                    {
+                        using (var zbFill = new SolidBrush(Color.FromArgb(90, zBandTint)))
+                            g.FillRectangle(zbFill, drawX, drawY, w, h);
+                        using (var zbPen = new Pen(zBandTint, 2))
+                            g.DrawRectangle(zbPen, drawX, drawY, w, h);
+                    }
+                }
+                catch { }
+
                 bool isSel = selectedObjects.Contains(obj);
                 if (isSel)
                 {
@@ -365,6 +380,13 @@ namespace MeesaMultisMaker
                 using (var pen = new Pen(borderColor, 1)) g.DrawRectangle(pen, marqueeRect);
             }
 
+            // Draw lasso (free-path alternative to marquee; green=select,
+            // orange=deselect — distinct from the cyan/red rectangle marquee).
+            if (isLassoSelecting && lassoPoints.Count > 1)
+            {
+                DrawLassoPath(g);
+            }
+
             // Draw skew mode indicator
             if (isSkewMode)
             {
@@ -390,6 +412,158 @@ namespace MeesaMultisMaker
                 DrawRotationHandle(g, selectedObject, drawX, drawY, w, h);
             }
         }
+
+        #region Lasso Selection (free-path alternative to rectangle marquee)
+
+        /// <summary>
+        /// Draw the in-progress lasso path (mirrors MapViewerForm.Rendering.cs
+        /// DrawLassoPath, but green/orange so it is distinct from the
+        /// cyan/red rectangle marquee).
+        /// </summary>
+        private void DrawLassoPath(Graphics g)
+        {
+            if (lassoPoints.Count < 2) return;
+            Color fill = lassoDeselect ? HolographicTheme.LassoDeselect : HolographicTheme.LassoSelect;
+            Color border = lassoDeselect ? HolographicTheme.LassoDeselectBorder : HolographicTheme.LassoSelectBorder;
+            if (lassoPoints.Count >= 3)
+            {
+                using (var b = new SolidBrush(fill))
+                { try { g.FillPolygon(b, lassoPoints.ToArray()); } catch { } }
+            }
+            using (var glow = new Pen(Color.FromArgb(100, border), 4))
+            {
+                glow.LineJoin = LineJoin.Round;
+                try
+                {
+                    g.DrawLines(glow, lassoPoints.ToArray());
+                    if (lassoPoints.Count > 2)
+                        g.DrawLine(glow, lassoPoints[lassoPoints.Count - 1], lassoPoints[0]);
+                }
+                catch { }
+            }
+            using (var pen = new Pen(border, 2))
+            {
+                pen.LineJoin = LineJoin.Round;
+                pen.DashStyle = DashStyle.Dash;
+                try
+                {
+                    g.DrawLines(pen, lassoPoints.ToArray());
+                    if (lassoPoints.Count > 2)
+                        g.DrawLine(pen, lassoPoints[lassoPoints.Count - 1], lassoPoints[0]);
+                }
+                catch { }
+            }
+            using (var b = new SolidBrush(Color.White))
+            { foreach (var pt in lassoPoints) g.FillEllipse(b, pt.X - 3, pt.Y - 3, 6, 6); }
+        }
+
+        /// <summary>
+        /// Add a point to the lasso path (5px minimum spacing, mirrors
+        /// MapViewerForm.TileSelection.cs AddLassoPoint).
+        /// </summary>
+        private void AddLassoPoint(Point pt)
+        {
+            if (!isLassoSelecting) return;
+            if (lassoPoints.Count > 0)
+            {
+                var last = lassoPoints[lassoPoints.Count - 1];
+                double dx = pt.X - last.X, dy = pt.Y - last.Y;
+                if (dx * dx + dy * dy < LASSO_DRAG_THRESHOLD * LASSO_DRAG_THRESHOLD) return;
+            }
+            lassoPoints.Add(pt);
+            designPictureBox.Invalidate();
+        }
+
+        /// <summary>
+        /// Cancel the in-progress lasso (Esc or short-circuit).
+        /// </summary>
+        private void CancelLassoSelection()
+        {
+            isPotentialLasso = false;
+            isLassoSelecting = false;
+            lassoPoints.Clear();
+            try { designPictureBox.Capture = false; } catch { }
+            designPictureBox.Invalidate();
+        }
+
+        /// <summary>
+        /// Complete the lasso: select/deselect every object whose screen-space
+        /// draw-rect CENTER falls inside the closed loop via
+        /// GraphicsPath.IsVisible. Center-point rule matches MapViewer
+        /// SelectStaticsInLasso/SelectLandTilesInLasso (not rect-intersect).
+        /// Locked objects are skipped on select (as rectangle does); deselect
+        /// removes regardless of lock (as rectangle deselect does). Mirrors
+        /// rectangle marquee: SyncListBoxSelections, no PushUndo (selection
+        /// only — rectangle marquee likewise does not PushUndo).
+        /// </summary>
+        private void CompleteLassoSelection()
+        {
+            bool deselect = lassoDeselect;
+            isLassoSelecting = false;
+            isPotentialLasso = false;
+            try { designPictureBox.Capture = false; } catch { }
+            if (lassoPoints.Count < 3)
+            {
+                lassoPoints.Clear();
+                designPictureBox.Invalidate();
+                return;
+            }
+
+            int minZFilter = minZTrackBar?.Value ?? -127;
+            int maxZFilter = maxZTrackBar?.Value ?? 127;
+
+            try
+            {
+                using (var path = new GraphicsPath())
+                {
+                    try { path.AddPolygon(lassoPoints.ToArray()); }
+                    catch { lassoPoints.Clear(); designPictureBox.Invalidate(); return; }
+
+                    if (deselect)
+                    {
+                        foreach (var obj in placedObjects.ToList())
+                        {
+                            if (obj.Hidden) continue;
+                            if (!IsImageUsable(obj.Image)) continue;
+                            if (obj.Z < minZFilter || obj.Z > maxZFilter) continue;
+                            float drawX, drawY, w, h;
+                            GetObjectDrawPosition(obj, out drawX, out drawY, out w, out h);
+                            if (w <= 0 || h <= 0) continue;
+                            if (path.IsVisible(drawX + w / 2f, drawY + h / 2f))
+                                selectedObjects.Remove(obj);
+                        }
+                    }
+                    else
+                    {
+                        selectedObjects.Clear();
+                        foreach (var obj in placedObjects)
+                        {
+                            if (obj.Hidden) continue;
+                            if (!IsImageUsable(obj.Image)) continue;
+                            if (lockedObjects.Contains(obj)) continue;
+                            if (obj.Z < minZFilter || obj.Z > maxZFilter) continue;
+                            float drawX, drawY, w, h;
+                            GetObjectDrawPosition(obj, out drawX, out drawY, out w, out h);
+                            if (w <= 0 || h <= 0) continue;
+                            if (path.IsVisible(drawX + w / 2f, drawY + h / 2f))
+                                selectedObjects.Add(obj);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                lassoPoints.Clear();
+            }
+
+            selectedObject = selectedObjects.FirstOrDefault();
+            isSkewMode = false;
+            isRotateMode = false;
+            SyncListBoxSelections();
+            designPictureBox.Invalidate();
+        }
+
+        #endregion
 
         #region Skew/Distort Methods
 
@@ -1724,6 +1898,28 @@ namespace MeesaMultisMaker
                 return;
             }
 
+            // Lasso (free-path alternative to rectangle marquee). SAM /
+            // eyedropper / slice / rotate / skew intercepts above take
+            // precedence (we only get here when none of them are armed).
+            // Ctrl+Shift+Left-drag = lasso select, Alt+Shift+Left-drag =
+            // lasso deselect (Alt wins if combined). Uses a drag threshold
+            // like MapViewer so a plain click still toggles (select) / no-ops
+            // (deselect) instead of starting a loop.
+            if (e.Button == MouseButtons.Left)
+            {
+                bool altL = (ModifierKeys & Keys.Alt) == Keys.Alt;
+                bool ctrlL = (ModifierKeys & Keys.Control) == Keys.Control;
+                bool shiftL = (ModifierKeys & Keys.Shift) == Keys.Shift;
+                if (shiftL && (altL || ctrlL))
+                {
+                    isPotentialLasso = true;
+                    potentialLassoStart = e.Location;
+                    potentialLassoDeselect = altL;
+                    designPictureBox.Capture = true;
+                    return;
+                }
+            }
+
             if ((ModifierKeys & Keys.Alt) == Keys.Alt)
             { marqueeStart = e.Location; marqueeRect = new Rectangle(e.Location, Size.Empty); marqueeDeselect = true; isMarquee = true; designPictureBox.Capture = true; designPictureBox.Invalidate(); return; }
 
@@ -1861,6 +2057,26 @@ namespace MeesaMultisMaker
                 return;
             }
 
+            if (isPotentialLasso)
+            {
+                double pdx = e.X - potentialLassoStart.X, pdy = e.Y - potentialLassoStart.Y;
+                if (pdx * pdx + pdy * pdy >= LASSO_DRAG_THRESHOLD * LASSO_DRAG_THRESHOLD)
+                {
+                    isPotentialLasso = false;
+                    isLassoSelecting = true;
+                    lassoDeselect = potentialLassoDeselect;
+                    lassoPoints.Clear();
+                    lassoPoints.Add(potentialLassoStart);
+                    lassoPoints.Add(e.Location);
+                    designPictureBox.Invalidate();
+                }
+                return;
+            }
+            if (isLassoSelecting)
+            {
+                AddLassoPoint(e.Location);
+                return;
+            }
             if (isMarquee)
             { int x = Math.Min(marqueeStart.X, e.X); int y = Math.Min(marqueeStart.Y, e.Y); int mw = Math.Abs(e.X - marqueeStart.X); int mh = Math.Abs(e.Y - marqueeStart.Y); marqueeRect = new Rectangle(x, y, mw, mh); designPictureBox.Invalidate(); return; }
             if (!isDragging || selectedObject == null) return;
@@ -1903,6 +2119,67 @@ namespace MeesaMultisMaker
             }
 
             if (isPanning) { isPanning = false; designPictureBox.Capture = false; return; }
+            // Lasso click without drag: emulate Ctrl+click toggle (select
+            // variant) or no-op (deselect variant, mirrors Alt+click).
+            if (isPotentialLasso && e.Button == MouseButtons.Left)
+            {
+                bool wasDeselect = potentialLassoDeselect;
+                isPotentialLasso = false;
+                try { designPictureBox.Capture = false; } catch { }
+                if (wasDeselect)
+                {
+                    designPictureBox.Invalidate();
+                    return;
+                }
+                int minZFilter = minZTrackBar?.Value ?? -127;
+                int maxZFilter = maxZTrackBar?.Value ?? 127;
+                PlacedObject clicked = null;
+                foreach (var obj in GetPaintOrder().Reverse())
+                {
+                    if (obj.Hidden) continue;
+                    if (!IsImageUsable(obj.Image)) continue;
+                    if (lockedObjects.Contains(obj)) continue;
+                    if (obj.Z < minZFilter || obj.Z > maxZFilter) continue;
+                    int w, h;
+                    try { w = (int)Math.Round(obj.Image.Width * zoom); h = (int)Math.Round(obj.Image.Height * zoom); }
+                    catch { continue; }
+                    Point iso = GridToIso(obj.GridX, obj.GridY);
+                    int drawX = iso.X - w / 2;
+                    int drawY = iso.Y - h + (int)Math.Round((TILE_HEIGHT / 2f) * zoom);
+                    if (new Rectangle(drawX, drawY, w, h).Contains(e.Location)) { clicked = obj; break; }
+                }
+                if (clicked != null)
+                {
+                    if (selectedObjects.Contains(clicked))
+                    {
+                        selectedObjects.Remove(clicked);
+                        selectedObject = selectedObjects.FirstOrDefault();
+                    }
+                    else
+                    {
+                        selectedObjects.Add(clicked);
+                        selectedObject = clicked;
+                    }
+                    isSkewMode = false;
+                    isRotateMode = false;
+                    SyncListBoxSelections();
+                }
+                else
+                {
+                    selectedObjects.Clear();
+                    selectedObject = null;
+                    isSkewMode = false;
+                    isRotateMode = false;
+                    SyncListBoxSelections();
+                }
+                designPictureBox.Invalidate();
+                return;
+            }
+            if (isLassoSelecting && e.Button == MouseButtons.Left)
+            {
+                CompleteLassoSelection();
+                return;
+            }
             if (isMarquee)
             {
                 var rect = marqueeRect;

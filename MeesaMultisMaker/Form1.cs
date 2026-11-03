@@ -846,6 +846,11 @@ namespace MeesaMultisMaker
             buttonTooltip.SetToolTip(showOverlapButton, "Magenta tint shows art covered by later-drawn pieces (airogen-as-one blind spots). Click to toggle.");
             this.controlsPanel.Controls.Add(showOverlapButton);
 
+            var splitZBandsBtn = CreateThemedButton("Split Z-Bands", 1040, 147, 115, ButtonStyle.Default);
+            splitZBandsBtn.Click += (s, e) => OpenZBandSplitDialog();
+            buttonTooltip.SetToolTip(splitZBandsBtn, "Split multi into Z-bands x TileData categories (Foundation/Story/Roof parts) with preview, then explode side-by-side for per-part artwork.");
+            this.controlsPanel.Controls.Add(splitZBandsBtn);
+
             // Increase controls panel height
             this.controlsPanel.Height = 180;
 

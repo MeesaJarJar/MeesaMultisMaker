@@ -115,12 +115,20 @@
     <Compile Include="ComfyUI\ComfyUIClient.cs" />
     <Compile Include="ComfyUI\Flux2KleinImage2ImageWorkflow.cs" />
     <Compile Include="ComfyUI\Flux2KleinInpaintBatchWorkflow.cs" />
+    <Compile Include="ComfyUI\BuiltInImageVariants.cs" />
+    <Compile Include="ComfyUI\BuiltInWorkflowRegistry.cs" />
     <Compile Include="ComfyUI\Flux2KleinInpaintWorkflow.cs" />
     <Compile Include="Controls\HoloScrollPanel.cs">
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="Diagnostics\GumpDebug.cs" />
     <Compile Include="Dialogs\SpriteSheetSplitterDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\ZBandSplitDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Form1.ZBands.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Form1.ArtLoading.cs">
@@ -170,6 +178,7 @@
     <Compile Include="Generation\Point3D.cs" />
     <Compile Include="Generation\StructureGenerator.cs" />
     <Compile Include="Generation\TileInstance.cs" />
+    <Compile Include="ZBands\ZBandSplitter.cs" />
     <Compile Include="GumpEditorForm.AI.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -220,6 +229,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Audio\AudioWorkflow.cs" />
+    <Compile Include="Audio\BuiltInAudioWorkflows.cs" />
+    <Compile Include="Audio\BuiltInAudioVariants.cs" />
+    <Compile Include="Audio\BuiltInVoiceVariants.cs" />
     <Compile Include="Audio\WaveFile.cs" />
     <Compile Include="Audio\AudioPlayer.cs" />
     <Compile Include="Audio\AudioConvert.cs" />
@@ -259,6 +271,9 @@
     <Compile Include="ThreeD\GlSplatRenderer.cs" />
     <Compile Include="ThreeD\ComfyPreviewSocket.cs" />
     <Compile Include="ThreeD\MultisMaker1Workflow.cs" />
+    <Compile Include="ThreeD\BuiltIn3DWorkflow.cs" />
+    <Compile Include="ThreeD\BuiltIn3DCoreVariants.cs" />
+    <Compile Include="ThreeD\BuiltIn3DExtended.cs" />
     <Compile Include="ThreeD\SplatSelect.cs" />
     <Compile Include="ThreeD\SplatOps.cs" />
     <Compile Include="ThreeD\SplatCage.cs" />
@@ -345,6 +360,7 @@
     <Compile Include="UpdateChecker.cs" />
     <Compile Include="Utils\ImageEffects.cs" />
     <Compile Include="Utils\SamService.cs" />
+    <Compile Include="Utils\ComfySamInstaller.cs" />
     <Compile Include="Mul\MultiReader.cs" />
     <Compile Include="AppConfig.cs" />
     <Compile Include="HolographicTheme.cs" />

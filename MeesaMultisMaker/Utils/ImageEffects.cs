@@ -789,6 +789,50 @@ namespace MeesaMultisMaker.Utils
         }
 
         /// <summary>
+        /// UO-style retro look: Pixelize + ColorBanding + Dither.
+        /// Reuses existing Pixelize/ColorBanding/Dither (no duplicated
+        /// logic). Preserves alpha via those methods; transparent pixels
+        /// stay transparent. Caller owns the returned bitmap; source is
+        /// not mutated. Intermediates are disposed internally.
+        /// </summary>
+        /// <param name="source">Source image (not mutated)</param>
+        /// <param name="pixelSize">Pixelize block size (default 3)</param>
+        /// <param name="bands">ColorBanding bands per channel (default 14)</param>
+        /// <param name="ditherLevels">Dither levels per channel (default 7)</param>
+        public static Bitmap ApplyUoStyle(Bitmap source, int pixelSize = 3, int bands = 14, int ditherLevels = 7)
+        {
+            if (source == null) return null;
+            Bitmap cur = new Bitmap(source);
+            try
+            {
+                if (pixelSize > 1)
+                {
+                    Bitmap tmp = Pixelize(cur, pixelSize);
+                    cur.Dispose();
+                    cur = tmp;
+                }
+                if (bands > 1)
+                {
+                    Bitmap tmp = ColorBanding(cur, bands);
+                    cur.Dispose();
+                    cur = tmp;
+                }
+                if (ditherLevels > 1)
+                {
+                    Bitmap tmp = Dither(cur, ditherLevels);
+                    cur.Dispose();
+                    cur = tmp;
+                }
+                return cur;
+            }
+            catch
+            {
+                if (cur != null) cur.Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Exact luminance used for partial-hue prep (R=G=B=lum so
         /// HuesReader.ApplyHue's r==g&&g==b check catches the pixel).
         /// </summary>

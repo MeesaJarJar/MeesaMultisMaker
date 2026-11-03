@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -30,24 +31,35 @@ namespace MeesaMultisMaker
     /// <summary>
     /// Lets the user pick the winning artwork per repeated ItemID.
     /// Returns the choice as GraphicId -> variant Bitmap (caller-owned ref).
+    ///
+    /// HANDLE-SAFETY: earlier revisions built 3 windowed controls
+    /// (Panel + PictureBox + RadioButton) PER variant, so hundreds of
+    /// variants exhausted the ~10k USER handle limit ("Error creating
+    /// window handle"). This revision builds exactly ONE ListView per
+    /// group (plus its header Label). Thumbnails are 96px clones owned
+    /// and disposed by the dialog; caller-owned variant Bitmaps are
+    /// NEVER disposed here.
     /// </summary>
     public class UnifyPickerDialog : Form
     {
         public readonly Dictionary<string, Bitmap> ChosenById =
             new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
 
+        private const int ThumbSize = 96;
+        private const int VirtualThreshold = 500;
+
         private readonly List<UnifyGroup> groups;
         private readonly List<int> chosenIndex;
-        // Each RadioButton lives inside its own thumbnail cell Panel, so WinForms
-        // cannot enforce mutual exclusion per ID group (exclusion is per-parent).
-        // Track the buttons per group and enforce single-selection in code.
-        private readonly List<List<RadioButton>> groupRadios;
+        private readonly List<ListView> groupViews = new List<ListView>();
+        private readonly List<ImageList> imageLists = new List<ImageList>();
+        private readonly List<List<Bitmap>> thumbStore = new List<List<Bitmap>>();
+        private readonly List<List<string>> itemTags = new List<List<string>>();
+        private bool disposedDialog;
 
         public UnifyPickerDialog(List<UnifyGroup> groups)
         {
             this.groups = groups;
             chosenIndex = groups.Select(g => Math.Max(0, Math.Min(g.DefaultIndex, g.Variants.Count - 1))).ToList();
-            groupRadios = groups.Select(g => new List<RadioButton>(g.Variants.Count)).ToList();
 
             Text = "Unify Same IDs - pick the winning artwork";
             StartPosition = FormStartPosition.CenterParent;
@@ -101,6 +113,7 @@ namespace MeesaMultisMaker
             for (int gi = 0; gi < groups.Count; gi++)
             {
                 var g = groups[gi];
+                int capturedGi = gi;
                 var header = new Label
                 {
                     Text = string.Format("{0} - {1} tiles, {2} artworks (pick the winner)", g.GraphicId, g.MemberCount, g.Variants.Count),
@@ -114,77 +127,207 @@ namespace MeesaMultisMaker
                 scroll.Controls.Add(header);
                 y += 24;
 
-                var flow = new FlowLayoutPanel
+                // Build 96px thumbnail clones (dialog-owned) + tags. Never hand
+                // full-size (possibly 4096px) caller Bitmaps to the UI.
+                var thumbs = new List<Bitmap>(g.Variants.Count);
+                var tags = new List<string>(g.Variants.Count);
+                for (int vi = 0; vi < g.Variants.Count; vi++)
+                {
+                    var v = g.Variants[vi];
+                    int vw, vh;
+                    bool usable;
+                    Bitmap thumb = MakeThumb(v.Image, out vw, out vh, out usable);
+                    thumbs.Add(thumb);
+                    tags.Add(BuildTag(vi, v, vw, vh, usable));
+                }
+                thumbStore.Add(thumbs);
+                itemTags.Add(tags);
+
+                var imgList = new ImageList
+                {
+                    ImageSize = new Size(ThumbSize, ThumbSize),
+                    ColorDepth = ColorDepth.Depth32Bit
+                };
+                foreach (var t in thumbs)
+                {
+                    try { imgList.Images.Add(t); }
+                    catch { /* keep going; missing thumb shows blank */ }
+                }
+                imageLists.Add(imgList);
+
+                bool useVirtual = g.Variants.Count > VirtualThreshold;
+                var view = new ListView
                 {
                     Left = 6,
                     Top = y,
                     Width = 520,
                     Height = 138,
-                    AutoScroll = true,
-                    WrapContents = true,
+                    View = View.LargeIcon,
+                    LargeImageList = imgList,
+                    MultiSelect = false,
+                    HideSelection = false,
+                    FullRowSelect = true,
+                    LabelWrap = true,
+                    Scrollable = true,
+                    BorderStyle = BorderStyle.FixedSingle,
                     BackColor = Color.FromArgb(24, 24, 32),
-                    BorderStyle = BorderStyle.FixedSingle
+                    ForeColor = Color.White,
+                    UseCompatibleStateImageBehavior = false
                 };
-                scroll.Controls.Add(flow);
-                y += 144;
 
-                for (int vi = 0; vi < g.Variants.Count; vi++)
+                if (useVirtual)
                 {
-                    var v = g.Variants[vi];
-                    int capturedGi = gi;
-                    int capturedVi = vi;
-
-                    var cell = new Panel { Width = 116, Height = 128, BackColor = Color.Transparent };
-                    // A variant may have been disposed upstream (shared art-cache
-                    // instance): touching Width throws ArgumentException. Show a
-                    // placeholder label instead of crashing the dialog.
-                    int vw = 0, vh = 0;
-                    bool thumbOk = false;
-                    try { vw = v.Image.Width; vh = v.Image.Height; thumbOk = vw > 0 && vh > 0; }
-                    catch { thumbOk = false; }
-                    var pic = new PictureBox
+                    // VirtualMode avoids materializing thousands of
+                    // ListViewItem objects; the ImageList above is the
+                    // thumbnail cache (pre-filled 96px clones).
+                    view.VirtualMode = true;
+                    view.VirtualListSize = g.Variants.Count;
+                    view.RetrieveVirtualItem += (s, e) =>
                     {
-                        Image = thumbOk ? v.Image : null,
-                        SizeMode = PictureBoxSizeMode.Zoom,
-                        Left = 8,
-                        Top = 2,
-                        Width = 100,
-                        Height = 96,
-                        BorderStyle = BorderStyle.FixedSingle
-                    };
-                    string tag = thumbOk
-                        ? string.Format("#{0}{1} ({2}x{3})", vi + 1, v.IsRegen ? " AI" : "", vw, vh)
-                        : string.Format("#{0} (unusable)", vi + 1);
-                    var radio = new RadioButton
-                    {
-                        Text = tag,
-                        Left = 4,
-                        Top = 100,
-                        Width = 108,
-                        Height = 22,
-                        ForeColor = Color.White,
-                        Checked = (vi == chosenIndex[gi]),
-                        Tag = capturedVi
-                    };
-                    radio.CheckedChanged += (s, e) =>
-                    {
-                        var rb = s as RadioButton;
-                        if (rb != null && rb.Checked)
+                        try
                         {
-                            chosenIndex[capturedGi] = (int)rb.Tag;
-                            // Enforce exactly one winner per ID group: uncheck siblings.
-                            foreach (var other in groupRadios[capturedGi])
-                                if (!ReferenceEquals(other, rb) && other.Checked)
-                                    other.Checked = false;
+                            string text = itemTags[capturedGi][e.ItemIndex];
+                            e.Item = new ListViewItem(text, e.ItemIndex);
+                            e.Item.Tag = e.ItemIndex;
+                        }
+                        catch
+                        {
+                            e.Item = new ListViewItem("#?", 0);
                         }
                     };
-                    groupRadios[gi].Add(radio);
-                    pic.Click += (s, e) => { radio.Checked = true; };
-                    cell.Controls.Add(pic);
-                    cell.Controls.Add(radio);
-                    flow.Controls.Add(cell);
+                    view.CacheVirtualItems += (s, e) => { /* thumbs pre-cached */ };
+                    view.VirtualItemsSelectionRangeChanged += (s, e) =>
+                    {
+                        try
+                        {
+                            if (e.IsSelected)
+                                chosenIndex[capturedGi] = Math.Max(0, Math.Min(e.StartIndex, groups[capturedGi].Variants.Count - 1));
+                        }
+                        catch { }
+                    };
+                    view.SelectedIndexChanged += (s, e) =>
+                    {
+                        try
+                        {
+                            if (view.SelectedIndices.Count > 0)
+                                chosenIndex[capturedGi] = view.SelectedIndices[0];
+                        }
+                        catch { }
+                    };
+                }
+                else
+                {
+                    for (int vi = 0; vi < g.Variants.Count; vi++)
+                    {
+                        var item = new ListViewItem(tags[vi], vi);
+                        item.Tag = vi;
+                        view.Items.Add(item);
+                    }
+                    view.SelectedIndexChanged += (s, e) =>
+                    {
+                        try
+                        {
+                            if (view.SelectedIndices.Count > 0)
+                                chosenIndex[capturedGi] = view.SelectedIndices[0];
+                        }
+                        catch { }
+                    };
+                    view.ItemSelectionChanged += (s, e) =>
+                    {
+                        try
+                        {
+                            if (e.IsSelected && e.Item != null && e.Item.Tag is int)
+                                chosenIndex[capturedGi] = (int)e.Item.Tag;
+                        }
+                        catch { }
+                    };
+                }
+
+                scroll.Controls.Add(view);
+                groupViews.Add(view);
+                y += 144;
+
+                // Default selection = DefaultIndex (single winner per ID).
+                try
+                {
+                    int def = chosenIndex[gi];
+                    if (def >= 0 && def < g.Variants.Count)
+                    {
+                        if (useVirtual)
+                        {
+                            view.SelectedIndices.Add(def);
+                            try { view.EnsureVisible(def); } catch { }
+                        }
+                        else if (def < view.Items.Count)
+                        {
+                            view.Items[def].Selected = true;
+                            view.Items[def].Focused = true;
+                            try { view.EnsureVisible(def); } catch { }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static string BuildTag(int vi, UnifyVariant v, int vw, int vh, bool usable)
+        {
+            if (!usable)
+                return string.Format("#{0} (unusable)", vi + 1);
+            return string.Format("#{0}{1} ({2}x{3})", vi + 1, v != null && v.IsRegen ? " AI" : "", vw, vh);
+        }
+
+        private static Bitmap MakeThumb(Image src, out int vw, out int vh, out bool usable)
+        {
+            vw = 0; vh = 0; usable = false;
+            try
+            {
+                if (src == null) return MakePlaceholderThumb();
+                vw = src.Width; vh = src.Height;
+                usable = vw > 0 && vh > 0;
+            }
+            catch { usable = false; }
+            if (!usable) return MakePlaceholderThumb();
+            try
+            {
+                float scale = Math.Min((float)ThumbSize / vw, (float)ThumbSize / vh);
+                int dw = Math.Max(1, (int)(vw * scale));
+                int dh = Math.Max(1, (int)(vh * scale));
+                var thumb = new Bitmap(ThumbSize, ThumbSize);
+                using (var gr = Graphics.FromImage(thumb))
+                {
+                    gr.Clear(Color.FromArgb(24, 24, 32));
+                    gr.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    gr.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    gr.SmoothingMode = SmoothingMode.HighQuality;
+                    int dx = (ThumbSize - dw) / 2;
+                    int dy = (ThumbSize - dh) / 2;
+                    gr.DrawImage(src, new Rectangle(dx, dy, dw, dh), new Rectangle(0, 0, vw, vh), GraphicsUnit.Pixel);
+                }
+                return thumb;
+            }
+            catch
+            {
+                usable = false;
+                try { return MakePlaceholderThumb(); }
+                catch { return new Bitmap(ThumbSize, ThumbSize); }
+            }
+        }
+
+        private static Bitmap MakePlaceholderThumb()
+        {
+            var bmp = new Bitmap(ThumbSize, ThumbSize);
+            using (var gr = Graphics.FromImage(bmp))
+            {
+                gr.Clear(Color.FromArgb(40, 40, 50));
+                using (var pen = new Pen(Color.Gray))
+                {
+                    gr.DrawRectangle(pen, 2, 2, ThumbSize - 5, ThumbSize - 5);
+                    gr.DrawLine(pen, 2, 2, ThumbSize - 3, ThumbSize - 3);
+                    gr.DrawLine(pen, ThumbSize - 3, 2, 2, ThumbSize - 3);
                 }
             }
+            return bmp;
         }
 
         private void CollectChoices()
@@ -211,6 +354,35 @@ namespace MeesaMultisMaker
             if (img == null) return false;
             try { return img.Width > 0 && img.Height > 0; }
             catch { return false; }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && !disposedDialog)
+            {
+                disposedDialog = true;
+                // Dispose dialog-owned 96px thumbnails + ImageLists only.
+                // Caller-owned variant Bitmaps are NEVER disposed here.
+                try
+                {
+                    if (imageLists != null)
+                        foreach (var il in imageLists)
+                        { try { if (il != null) il.Dispose(); } catch { } }
+                }
+                catch { }
+                try
+                {
+                    if (thumbStore != null)
+                        foreach (var lst in thumbStore)
+                        {
+                            if (lst == null) continue;
+                            foreach (var t in lst)
+                            { try { if (t != null) t.Dispose(); } catch { } }
+                        }
+                }
+                catch { }
+            }
+            base.Dispose(disposing);
         }
     }
 }

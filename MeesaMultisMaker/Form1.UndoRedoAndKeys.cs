@@ -51,6 +51,9 @@ namespace MeesaMultisMaker
   isPanning = false;
   isMarquee = false;
   marqueeRect = Rectangle.Empty;
+  isLassoSelecting = false;
+  isPotentialLasso = false;
+  lassoPoints.Clear();
 
   placedObjects.Clear();
   placedObjects.AddRange(snapshot.Select(o => o.CloneForUndo()));
@@ -125,6 +128,14 @@ namespace MeesaMultisMaker
      e.Handled = true;
      return;
  }
+
+  // Escape cancels an in-progress lasso (or armed lasso press)
+  if (!isTyping && e.KeyCode == Keys.Escape && (isLassoSelecting || isPotentialLasso))
+  {
+  CancelLassoSelection();
+  e.Handled = true;
+  return;
+  }
  
  // Delete selected objects with Delete key (allow even when typing - Delete in textbox is handled by textbox)
  if (e.KeyCode == Keys.Delete && !isTyping)
@@ -186,6 +197,28 @@ namespace MeesaMultisMaker
  designPictureBox.Invalidate();
  }
  e.Handled = true; return;
+ }
+
+ // Select All (Ctrl+A) — same eligibility as rectangle marquee select, minus geometry test
+ if (e.Control && e.KeyCode == Keys.A && !isTyping)
+ {
+  selectedObjects.Clear();
+  int minZFilter = minZTrackBar?.Value ?? -127;
+  int maxZFilter = maxZTrackBar?.Value ?? 127;
+  foreach (var obj in placedObjects)
+  {
+   if (obj.Hidden) continue;
+   if (!IsImageUsable(obj.Image)) continue;
+   if (lockedObjects.Contains(obj)) continue;
+   if (obj.Z < minZFilter || obj.Z > maxZFilter) continue;
+   selectedObjects.Add(obj);
+  }
+  selectedObject = selectedObjects.FirstOrDefault();
+  isSkewMode = false;
+  isRotateMode = false;
+  SyncListBoxSelections();
+  designPictureBox.Invalidate();
+  e.Handled = true; return;
  }
 
  // H key shortcuts - DO NOT intercept when typing in text inputs

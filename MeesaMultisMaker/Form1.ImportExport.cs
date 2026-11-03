@@ -1811,6 +1811,7 @@ var settings = GetAISettingsFromPanel();
         /// so running Unify again offers them for swapping. Operates on the
         /// selection, or the whole canvas if nothing is selected.
         /// </summary>
+        private const int MaxUnifyStashVariants = 12;
         private void UnifySameIdArt()
         {
             NormalizeAIPreviewState();
@@ -1911,10 +1912,10 @@ var settings = GetAISettingsFromPanel();
 
             if (chosenById == null)
             {
-                // Cancelled: canvas untouched, but stash everything so running
+                // Cancelled: canvas untouched, but stash (capped) so running
                 // Unify again offers the same swap choices.
                 foreach (var kvp in working)
-                    unifyCandidates[kvp.Key] = kvp.Value.Select(v => v.Image).ToList();
+                    StashUnifyVariantsCapped(kvp.Key, kvp.Value.Select(v => v.Image).ToList(), null);
                 SetAIStatus("Unify cancelled - choices kept, run again to swap", Color.Orange);
                 return;
             }
@@ -2028,8 +2029,8 @@ var settings = GetAISettingsFromPanel();
                     if (savable != null) MarkArtModified(gidVal, savable);
                 }
 
-                // Stash all variants (including the winner) for future swaps.
-                unifyCandidates[key] = working[key].Select(v => v.Image).Where(b => IsImageAlive(b)).ToList();
+                // Stash variants (including the winner, capped) for future swaps.
+                StashUnifyVariantsCapped(key, working[key].Select(v => v.Image).Where(b => IsImageAlive(b)).ToList(), chosen);
             }
 
             designPictureBox.Invalidate();
@@ -2099,6 +2100,112 @@ var settings = GetAISettingsFromPanel();
                 }
             }
             unifyCandidates.Clear();
+        }
+
+        /// <summary>
+        /// Cap the per-ID stash so repeated AI-regen + Unify cycles cannot grow
+        /// it (and the picker variant count) without bound. Keeps the
+        /// most-recent variants first (fresh canvas clones lead working[]),
+        /// pinning the winner when supplied. Dropped Bitmaps are disposed only
+        /// when provably unreferenced (canvas / art cache / kept stash); when
+        /// in doubt the drop is leaked rather than risking a disposed corpse.
+        /// </summary>
+        private void StashUnifyVariantsCapped(string key, List<Bitmap> candidates, Bitmap pinned)
+        {
+            if (key == null) key = "";
+            if (candidates == null) candidates = new List<Bitmap>();
+            // Drop nulls/corpses and duplicate references, preserving order
+            // (head = most-recent fresh clones).
+            var ordered = new List<Bitmap>(candidates.Count);
+            var seen = new HashSet<Image>();
+            foreach (var b in candidates)
+            {
+                if (b == null) continue;
+                if (seen.Contains(b)) continue;
+                if (!IsImageAlive(b)) continue;
+                seen.Add(b);
+                ordered.Add(b);
+            }
+            List<Bitmap> keep;
+            if (ordered.Count <= MaxUnifyStashVariants)
+            {
+                keep = ordered;
+            }
+            else
+            {
+                keep = ordered.Take(MaxUnifyStashVariants).ToList();
+                if (pinned != null)
+                {
+                    bool pinInOrdered = false;
+                    bool pinInKeep = false;
+                    foreach (var b in ordered) if (ReferenceEquals(b, pinned)) { pinInOrdered = true; break; }
+                    foreach (var b in keep) if (ReferenceEquals(b, pinned)) { pinInKeep = true; break; }
+                    if (pinInOrdered && !pinInKeep)
+                        keep[MaxUnifyStashVariants - 1] = pinned;
+                }
+            }
+            var keepSet = new HashSet<Image>(keep);
+            if (pinned != null) keepSet.Add(pinned);
+            foreach (var b in ordered)
+            {
+                if (keepSet.Contains(b)) continue;
+                if (IsUnifyDropSafeToDispose(b, keepSet))
+                { try { b.Dispose(); } catch { } }
+                // else: still referenced somewhere -- leak rather than corpse.
+            }
+            unifyCandidates[key] = keep;
+        }
+
+        /// <summary>
+        /// Mirror of the OK-path dispose discipline: never dispose an image
+        /// still referenced by PlacedObjects (Image/Original/PreEdit), the
+        /// shared art cache, the kept stash, or another stashed ID.
+        /// </summary>
+        private bool IsUnifyDropSafeToDispose(Image bmp, HashSet<Image> keepSet)
+        {
+            if (bmp == null) return false;
+            try
+            {
+                if (keepSet != null && keepSet.Contains(bmp)) return false;
+                if (!IsImageAlive(bmp)) return false;
+            }
+            catch { return false; }
+            try
+            {
+                foreach (var o in placedObjects)
+                {
+                    if (o == null) continue;
+                    try
+                    {
+                        if (ReferenceEquals(o.Image, bmp)) return false;
+                        if (ReferenceEquals(o.OriginalImage, bmp)) return false;
+                        if (ReferenceEquals(o.PreEditImage, bmp)) return false;
+                    }
+                    catch { return false; }
+                }
+            }
+            catch { return false; }
+            try
+            {
+                lock (imageCache)
+                {
+                    foreach (var kv in imageCache)
+                    { try { if (ReferenceEquals(kv.Value, bmp)) return false; } catch { return false; } }
+                }
+            }
+            catch { return false; }
+            try
+            {
+                foreach (var kv in unifyCandidates)
+                {
+                    var lst = kv.Value;
+                    if (lst == null) continue;
+                    foreach (var b in lst)
+                    { try { if (ReferenceEquals(b, bmp)) return false; } catch { return false; } }
+                }
+            }
+            catch { return false; }
+            return true;
         }
 
         /// <summary>

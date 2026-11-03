@@ -25,15 +25,16 @@ namespace MeesaMultisMaker.ThreeD
     /// </summary>
     public static class MultisMaker1Workflow
     {
-        public const string DefaultWorkflowPath =
-            @"D:\ComfyUIPortable\ComfyUI\user\default\workflows\MultisMaker1.json";
-
         // Node ids in MultisMaker1.json (see workflow file).
         private const string PromptNode = "138";
         private const string KSamplerNode = "101";
         private const string TripoDecodeNode = "107";
         private const string FluxNode = "131";
         private const string LoadImageNode = "132";
+
+        // Tripo splat density: 259200 gaussians (user-approved quality bump
+        // from 64800). Forced in code so it sticks regardless of JSON value.
+        private const int NumGaussians = 259200;
 
         // JarJarSubmit3D is dropped (server-side upload we don't need).
         // The Preview nodes MUST stay: the backend rejects prompts with no
@@ -53,16 +54,49 @@ namespace MeesaMultisMaker.ThreeD
             public string FormatNote;
         }
 
+        /// <summary>
+        /// Template-free entry point: same graph as the frozen MultisMaker1.json
+        /// but built by <see cref="BuiltIn3DWorkflow"/> with no File.ReadAllText.
+        /// Prefer this over <see cref="Build(string,string,long,string,int,int,bool,bool)"/>.
+        /// </summary>
+        public static BuildResult BuildBuiltIn(string prompt, long seed,
+            string initImageName, int steps, int fluxSteps, bool fluxOnly = false, bool skipFlux = false,
+            int numGaussians = BuiltIn3DWorkflow.DEFAULT_NUM_GAUSSIANS)
+        {
+            var rnd = new Random();
+            if (seed < 0)
+            {
+                seed = ((long)(uint)rnd.Next() << 32) | (long)(uint)rnd.Next();
+                if (seed < 0) seed = -seed;
+            }
+            if (steps < 1) steps = 20;
+            if (fluxSteps < 1) fluxSteps = 4;
+
+            string json = BuiltIn3DWorkflow.CreateWorkflow(
+                prompt, seed, steps, numGaussians, initImageName, fluxSteps, fluxOnly, skipFlux);
+            string note = fluxOnly ? "built-in flux-only"
+                : skipFlux ? "built-in no-flux (init feeds Tripo directly)"
+                : "built-in full (flux+tripo)";
+            return new BuildResult
+            {
+                PromptJson = json,
+                Seed = seed,
+                FormatNote = note
+            };
+        }
+
         /// <param name="fluxOnly">Image-only graph: just the Flux image stage
         /// plus a SaveImage (for "Generate Init Image"), no 3D nodes.</param>
         /// <param name="skipFlux">3D graph without the Flux image stage: the
         /// staged init image feeds the Tripo/remove-background stages
         /// directly (for "Generate 3D", which no longer regenerates 2D).
         /// Mutually exclusive with fluxOnly (fluxOnly wins).</param>
+        [Obsolete("Frozen built-in graph is available: use BuildBuiltIn (no template file) instead.")]
         public static BuildResult Build(string templatePath, string prompt, long seed,
             string initImageName, int steps, int fluxSteps, bool fluxOnly = false, bool skipFlux = false)
         {
-            if (string.IsNullOrEmpty(templatePath)) templatePath = DefaultWorkflowPath;
+            if (string.IsNullOrEmpty(templatePath))
+                throw new ArgumentException("templatePath is required (built-in graph: use BuildBuiltIn instead).", "templatePath");
             string json = File.ReadAllText(templatePath);
             var ser = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
             object raw;
@@ -179,6 +213,7 @@ namespace MeesaMultisMaker.ThreeD
                 if (ct == "KSampler" && inputs.ContainsKey("steps")) inputs["steps"] = steps;
                 if (ct == "Flux2Scheduler" && inputs.ContainsKey("steps")) inputs["steps"] = fluxSteps;
                 if (ct == "VAEDecodeTripoSplat" && inputs.ContainsKey("seed")) inputs["seed"] = fluxSeed;
+                if (ct == "VAEDecodeTripoSplat") inputs["num_gaussians"] = NumGaussians;
                 if (inputs.ContainsKey("noise_seed")) inputs["noise_seed"] = fluxSeed;
                 if (ct == "LoadImage" && !string.IsNullOrEmpty(initImageName) && inputs.ContainsKey("image"))
                     inputs["image"] = initImageName;
@@ -668,6 +703,7 @@ namespace MeesaMultisMaker.ThreeD
                 else if (id == KSamplerNode && wname == "seed") val = ctx.KSeed;
                 else if (id == KSamplerNode && wname == "steps") val = ctx.Steps;
                 else if (id == TripoDecodeNode && wname == "seed") val = ctx.FluxSeed;
+                else if (id == TripoDecodeNode && wname == "num_gaussians") val = NumGaussians;
                 else if (id == FluxNode && wname == "noise_seed") val = ctx.FluxSeed;
                 else if (id == LoadImageNode && wname == "image" && !string.IsNullOrEmpty(ctx.InitImage)) val = ctx.InitImage;
                 inputs[wname] = val;

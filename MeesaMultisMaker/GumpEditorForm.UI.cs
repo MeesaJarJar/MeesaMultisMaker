@@ -323,7 +323,7 @@ namespace MeesaMultisMaker
                 Top = y,
                 Width = 60,
                 Minimum = 100,
-                Maximum = 2048,
+                Maximum = 4096,
                 Value = canvasWidth
             };
             HolographicTheme.ApplyToNumericUpDown(canvasWidthUpDown);
@@ -343,7 +343,7 @@ namespace MeesaMultisMaker
                 Top = y,
                 Width = 60,
                 Minimum = 100,
-                Maximum = 2048,
+                Maximum = 4096,
                 Value = canvasHeight
             };
             HolographicTheme.ApplyToNumericUpDown(canvasHeightUpDown);

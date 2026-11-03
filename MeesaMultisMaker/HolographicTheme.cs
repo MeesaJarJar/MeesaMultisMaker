@@ -50,6 +50,13 @@ namespace MeesaMultisMaker
         public static readonly Color MarqueeSelect = Color.FromArgb(40, 0, 200, 255);
         public static readonly Color MarqueeDeselect = Color.FromArgb(40, 255, 100, 100);
 
+        // Lasso (free-path) selection: intentionally distinct from the cyan/red
+        // rectangle marquee above. Green = select, orange = deselect.
+        public static readonly Color LassoSelect = Color.FromArgb(40, 0, 255, 140);
+        public static readonly Color LassoSelectBorder = Color.FromArgb(255, 50, 255, 150);
+        public static readonly Color LassoDeselect = Color.FromArgb(40, 255, 150, 50);
+        public static readonly Color LassoDeselectBorder = Color.FromArgb(255, 255, 150, 50);
+
         /// <summary>
         /// Apply theme to a Form
         /// </summary>
