@@ -1426,8 +1426,20 @@ namespace MeesaMultisMaker.ComfyUI
       }
 
       /// <summary>
-      /// ControlNet Depth workflow using MeesaJarJar background removal, image blur,
+      /// ControlNet Depth workflow using background removal, image blur,
       /// depth-based ControlNet conditioning, and latent noise masking.
+      ///
+      /// Node 13 compat: this graph was authored against the legacy
+      /// "MeesaJarJar" background-removal node (threshold default 0.03 plus
+      /// feather / channel_mode / despill / invert_mask inputs). The
+      /// ComfyUI-MeesaJarJar pack no longer registers a "MeesaJarJar" key
+      /// (all pack keys are "JarJar*"-prefixed; a pack-side shim restores the
+      /// legacy alias at runtime), so the legacy JSON stays the default output.
+      /// Pass useLegacyMeesaNode: false to emit the pack-native
+      /// "JarJarRemoveBackground" instead (threshold default 0.1; the four
+      /// legacy-only inputs are dropped because that node takes only
+      /// image + threshold).
+      /// SplitImageWithAlpha (node 16) is a core-ComfyUI node, not a pack node.
       /// </summary>
       public class ControlNetDepthWorkflow
       {
@@ -1455,7 +1467,8 @@ namespace MeesaMultisMaker.ComfyUI
               double bgFeather = 0.0,
               string channelMode = "rgb_max",
               double despill = 0.0,
-              string invertMask = "no")
+              string invertMask = "no",
+              bool useLegacyMeesaNode = true)
           {
               if (!seed.HasValue)
                   seed = new Random().Next();
@@ -1468,6 +1481,19 @@ namespace MeesaMultisMaker.ComfyUI
               controlNetModel = controlNetModel.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
               var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+              // Node 13 fragment: legacy "MeesaJarJar" (default) vs pack-native
+              // "JarJarRemoveBackground" (image + threshold only).
+              string node13Class = useLegacyMeesaNode ? "MeesaJarJar" : "JarJarRemoveBackground";
+              string node13Inputs = useLegacyMeesaNode
+                  ? "\"threshold\": " + bgThreshold.ToString("0.00", inv) + ",\n" +
+                    "        \"feather\": " + bgFeather.ToString("0.00", inv) + ",\n" +
+                    "        \"channel_mode\": \"" + channelMode + "\",\n" +
+                    "        \"despill\": " + despill.ToString("0.00", inv) + ",\n" +
+                    "        \"invert_mask\": \"" + invertMask + "\",\n" +
+                    "        \"image\": [\"21\", 0]"
+                  : "\"threshold\": " + bgThreshold.ToString("0.00", inv) + ",\n" +
+                    "        \"image\": [\"21\", 0]";
 
               return $@"{{
     ""1"": {{
@@ -1553,14 +1579,9 @@ namespace MeesaMultisMaker.ComfyUI
     }},
     ""13"": {{
       ""inputs"": {{
-        ""threshold"": {bgThreshold.ToString("0.00", inv)},
-        ""feather"": {bgFeather.ToString("0.00", inv)},
-        ""channel_mode"": ""{channelMode}"",
-        ""despill"": {despill.ToString("0.00", inv)},
-        ""invert_mask"": ""{invertMask}"",
-        ""image"": [""21"", 0]
+        {node13Inputs}
       }},
-      ""class_type"": ""MeesaJarJar""
+      ""class_type"": ""{node13Class}""
     }},
     ""15"": {{
       ""inputs"": {{

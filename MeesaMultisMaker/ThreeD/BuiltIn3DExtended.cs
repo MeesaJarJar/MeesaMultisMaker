@@ -10,6 +10,7 @@ namespace MeesaMultisMaker.ThreeD
     /// following the BuiltIn3DWorkflow pattern: string concat, ExtendedJson.Escape, DEFAULT_* consts.
     /// Subgraph instances are expanded inline (sg-prefixed ids); Reroutes resolved; display-only
     /// nodes (MarkdownNote / PreviewAny / Preview3D / Pixal3DEnvironmentCheck) dropped. No file I/O.
+    /// JoinImageWithAlpha is a core-ComfyUI node, not a ComfyUI-MeesaJarJar pack node.
     /// </summary>
     internal static class ExtendedJson
     {

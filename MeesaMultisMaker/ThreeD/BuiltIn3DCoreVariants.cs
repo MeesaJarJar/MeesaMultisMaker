@@ -53,6 +53,8 @@ namespace MeesaMultisMaker.ThreeD
     // and are emitted as the 4-input union with viewport_state "".
     // No File I/O: every graph is emitted from string concatenation with
     // EscapeJson, following the BuiltIn3DWorkflow pattern.
+    // JoinImageWithAlpha (used by the tripo preview chains) is a core-ComfyUI
+    // node, not a ComfyUI-MeesaJarJar pack node.
     // =====================================================================
 
     /// <summary>

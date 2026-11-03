@@ -38,6 +38,8 @@
 //   MusubiFluxKleinLoraTrainer inputs by name.
 // - Vanger_Plants was saved against a 4-input JarJarShadow; current JarJarShadow
 //   takes 6 inputs, so the builder appends skew=0.0 / stretch=1.0 (node defaults).
+// - SplitImageWithAlpha / JoinImageWithAlpha are core-ComfyUI nodes, not
+//   ComfyUI-MeesaJarJar pack nodes; they are kept verbatim and need no pack mapping.
 //
 // Family aliases (same graph, different prompts/files where noted):
 // - FluxKleinSingleEditWorkflow: JarJarImageEdit.json + FluxKleinExample.json

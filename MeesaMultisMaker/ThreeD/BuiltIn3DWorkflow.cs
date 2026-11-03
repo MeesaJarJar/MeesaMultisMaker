@@ -30,6 +30,7 @@ namespace MeesaMultisMaker.ThreeD
     /// 66 EmptyFlux2LatentImage, 62 Flux2Scheduler, 63 CFGGuider,
     /// 61 KSamplerSelect, 73 RandomNoise, 64 SamplerCustomAdvanced, 65 VAEDecode.
     /// Outer 131 outputs rewrite to sg131_65:0 (VAEDecode IMAGE).
+    /// JoinImageWithAlpha (node 116) is a core-ComfyUI node, not a pack node.
     /// </summary>
     public static class BuiltIn3DWorkflow
     {
